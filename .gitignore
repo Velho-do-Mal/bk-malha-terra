@@ -1,40 +1,15 @@
-# Segredos
 .env
-.env.local
-*.pem
-*.key
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
 .venv/
 venv/
-env/
-*.egg-info/
+__pycache__/
+*.pyc
+*.sqlite3
+*.db
+bk_local.db
+.DS_Store
+.idea/
+.vscode/
+*.log
 dist/
 build/
-
-# Streamlit
-.streamlit/secrets.toml
-
-# IDEs
-.vscode/
-.idea/
-*.swp
-
-# Sistema
-.DS_Store
-Thumbs.db
-
-# Outputs
-*.docx
-*.pdf
-relatorios_gerados/
-
-# Testes
-.pytest_cache/
-.coverage
-htmlcov/
+*.egg-info/

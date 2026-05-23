@@ -1,24 +1,11 @@
 """
-core/verificacao.py
-===================
+core/verificacao.py — BK Malha de Terra v2
+==========================================
 
-Verificação de adequação da malha conforme IEEE Std 80-2013.
-
-Fluxograma de projeto (IEEE 80 §16.4):
-
-    1. Dados elétricos e do solo
-    2. Dimensiona condutor
-    3. Calcula tensões admissíveis (toque, passo)
-    4. Define geometria inicial da malha (D, h, hastes)
-    5. Calcula Rg
-    6. Calcula GPR = IG·Rg
-    7. Se GPR < Etoque admissível → OK, projeto seguro
-    8. Senão, calcula Em e Es
-    9. Se Em < Etoque admissível E Es < Epasso admissível → OK
-    10. Senão, ajusta geometria (mais cabos, mais hastes, brita) e volta ao 5
-
-Este módulo implementa a verificação (passos 7-9) e uma rotina de
-iteração automática para ajustar o número de hastes (passo 10).
+Verificação IEEE 80 §16 com correções P0 do relatório técnico BK:
+  - atende_condutor bloqueia aprovação (P0.3)
+  - atende_geral = condutor AND (GPR_simples OR toque+passo)  (P0.2)
+  - criterio_aprovacao informa se foi simplificado ou detalhado
 """
 
 from __future__ import annotations
@@ -27,46 +14,36 @@ from dataclasses import dataclass
 from typing import Optional
 
 from core.resistencia import (
-    GeometriaMalha,
-    ResultadoResistencia,
-    calcula_resistencia_e_tensoes,
+    GeometriaMalha, ResultadoResistencia, calcula_resistencia_e_tensoes,
 )
 
 
-# ============================================================
-# DATACLASSES
-# ============================================================
-
 @dataclass
 class Verificacao:
-    """Resultado da verificação de uma configuração de malha."""
-    em_v: float
-    es_v: float
-    etoque_adm_v: float
-    epasso_adm_v: float
-    gpr_v: float
-    atende_toque: bool
-    atende_passo: bool
-    atende_gpr_simples: bool   # GPR < Etoque (caso trivial)
-    atende_geral: bool
-    margem_toque_pct: float    # (Eadm − Em)/Eadm · 100
+    em_v:             float
+    es_v:             float
+    etoque_adm_v:     float
+    epasso_adm_v:     float
+    gpr_v:            float
+    atende_toque:     bool
+    atende_passo:     bool
+    atende_condutor:  bool     # P0: condutor bloqueia aprovação
+    atende_gpr_simples: bool
+    atende_geral:     bool     # CORRIGIDO: condutor AND (GPR ou toque+passo)
+    criterio_aprovacao: str
+    margem_toque_pct: float
     margem_passo_pct: float
-    observacoes: list[str]
+    observacoes:      list[str]
 
 
 @dataclass
 class IteracaoMalha:
-    """Resultado da iteração automática de hastes."""
     geometria_final: GeometriaMalha
-    resultado: ResultadoResistencia
-    verificacao: Verificacao
-    iteracoes: int
-    historico: list[dict]
+    resultado:       ResultadoResistencia
+    verificacao:     Verificacao
+    iteracoes:       int
+    historico:       list[dict]
 
-
-# ============================================================
-# VERIFICAÇÃO DE UMA CONFIGURAÇÃO
-# ============================================================
 
 def verifica_malha(
     em_v: float,
@@ -74,80 +51,76 @@ def verifica_malha(
     gpr_v: float,
     etoque_adm_v: float,
     epasso_adm_v: float,
+    bitola_adotada_mm2: float = 0.0,
+    bitola_calculada_mm2: float = 0.0,
 ) -> Verificacao:
     """
-    Verifica se a malha atende aos critérios de segurança IEEE 80.
+    Verifica adequação da malha IEEE 80 §16.
 
-    Critério principal:
-        Em ≤ Etoque_adm   AND   Es ≤ Epasso_adm
-
-    Critério simplificado (passo 7 do fluxograma):
-        Se GPR ≤ Etoque_adm: malha atende sem necessidade de calcular Em/Es
-        (porque qualquer ponto da malha terá tensão ≤ GPR)
-
-    Args:
-        em_v        : tensão de malha calculada [V]
-        es_v        : tensão de passo calculada [V]
-        gpr_v       : Ground Potential Rise [V]
-        etoque_adm_v: tensão de toque admissível [V]
-        epasso_adm_v: tensão de passo admissível [V]
-
-    Returns:
-        Verificacao com status e margens.
+    CORREÇÃO P0: atende_geral exige condutor térmico ok.
+        atende_geral = atende_condutor AND (atende_gpr OR (atende_toque AND atende_passo))
     """
-    atende_toque = em_v <= etoque_adm_v
-    atende_passo = es_v <= epasso_adm_v
-    atende_gpr   = gpr_v <= etoque_adm_v
+    atende_toque    = em_v  <= etoque_adm_v
+    atende_passo    = es_v  <= epasso_adm_v
+    atende_gpr      = gpr_v <= etoque_adm_v
+    atende_condutor = (bitola_adotada_mm2 >= bitola_calculada_mm2) if bitola_calculada_mm2 > 0 else True
 
-    margem_toque = (etoque_adm_v - em_v) / etoque_adm_v * 100.0
-    margem_passo = (epasso_adm_v - es_v) / epasso_adm_v * 100.0
+    margem_toque = (etoque_adm_v - em_v)  / etoque_adm_v * 100.0
+    margem_passo = (epasso_adm_v - es_v)  / epasso_adm_v * 100.0
+
+    atende_tensoes = atende_gpr or (atende_toque and atende_passo)
+    atende_geral   = atende_condutor and atende_tensoes
+
+    if not atende_condutor:
+        criterio = "reprovado — condutor térmico insuficiente"
+    elif not atende_tensoes:
+        criterio = "reprovado — tensões acima do admissível"
+    elif atende_gpr:
+        criterio = "aprovado — critério simplificado (GPR ≤ Etoque)"
+    else:
+        criterio = "aprovado — critério detalhado (Em/Es ≤ Eadm)"
 
     obs = []
+    if not atende_condutor:
+        obs.append(
+            f"❌ CONDUTOR REPROVADO: adotado {bitola_adotada_mm2:.0f} mm² "
+            f"< mínimo {bitola_calculada_mm2:.0f} mm². "
+            "Projeto NÃO PODE SER APROVADO. Aumente a bitola."
+        )
     if atende_gpr:
         obs.append(
-            f"GPR ({gpr_v:.0f} V) ≤ Etoque admissível "
-            f"({etoque_adm_v:.0f} V): malha intrinsecamente segura."
+            f"✅ GPR ({gpr_v:.0f} V) ≤ Etoque ({etoque_adm_v:.0f} V): "
+            "critério simplificado IEEE 80 §16 atendido."
         )
     if margem_toque < 10 and atende_toque:
-        obs.append(
-            f"Margem de toque pequena ({margem_toque:.1f}%). "
-            "Recomenda-se reforço (mais hastes ou cabo)."
-        )
+        obs.append(f"⚠️ Margem de toque pequena ({margem_toque:.1f}%). Considere reforço.")
     if margem_passo < 10 and atende_passo:
-        obs.append(
-            f"Margem de passo pequena ({margem_passo:.1f}%). "
-            "Verificar pontos críticos (cantos, periferia)."
-        )
+        obs.append(f"⚠️ Margem de passo pequena ({margem_passo:.1f}%). Verificar periferia.")
     if not atende_toque:
         obs.append(
-            f"NÃO ATENDE tensão de toque: Em={em_v:.0f}V > Eadm={etoque_adm_v:.0f}V. "
-            f"Excesso de {em_v - etoque_adm_v:.0f}V ({-margem_toque:.1f}%)."
+            f"❌ Tensão de malha: Em={em_v:.0f}V > Eadm={etoque_adm_v:.0f}V "
+            f"(excesso {em_v - etoque_adm_v:.0f}V)."
         )
     if not atende_passo:
         obs.append(
-            f"NÃO ATENDE tensão de passo: Es={es_v:.0f}V > Eadm={epasso_adm_v:.0f}V. "
-            f"Excesso de {es_v - epasso_adm_v:.0f}V ({-margem_passo:.1f}%)."
+            f"❌ Tensão de passo: Es={es_v:.0f}V > Eadm={epasso_adm_v:.0f}V "
+            f"(excesso {es_v - epasso_adm_v:.0f}V)."
         )
 
     return Verificacao(
-        em_v=em_v,
-        es_v=es_v,
-        etoque_adm_v=etoque_adm_v,
-        epasso_adm_v=epasso_adm_v,
+        em_v=em_v, es_v=es_v,
+        etoque_adm_v=etoque_adm_v, epasso_adm_v=epasso_adm_v,
         gpr_v=gpr_v,
-        atende_toque=atende_toque,
-        atende_passo=atende_passo,
+        atende_toque=atende_toque, atende_passo=atende_passo,
+        atende_condutor=atende_condutor,
         atende_gpr_simples=atende_gpr,
-        atende_geral=atende_toque and atende_passo,
+        atende_geral=atende_geral,
+        criterio_aprovacao=criterio,
         margem_toque_pct=margem_toque,
         margem_passo_pct=margem_passo,
         observacoes=obs,
     )
 
-
-# ============================================================
-# ITERAÇÃO AUTOMÁTICA DE HASTES
-# ============================================================
 
 def itera_num_hastes(
     geom_inicial: GeometriaMalha,
@@ -155,43 +128,21 @@ def itera_num_hastes(
     ig_a: float,
     etoque_adm_v: float,
     epasso_adm_v: float,
+    bitola_adotada_mm2: float = 0.0,
+    bitola_calculada_mm2: float = 0.0,
     n_hastes_min: int = 4,
     n_hastes_max: int = 200,
     incremento: int = 4,
 ) -> IteracaoMalha:
     """
-    Itera o número de hastes até atender critérios de segurança ou
-    atingir o limite máximo.
-
-    Estratégia:
-    1. Começa com n_hastes_min (mínimo: 4 hastes nos cantos)
-    2. Calcula Rg, Em, Es, GPR
-    3. Verifica
-    4. Se atende, retorna
-    5. Senão, incrementa hastes e tenta de novo
-    6. Se atingir n_hastes_max sem atender, retorna a última config
-       (usuário deve revisar geometria, profundidade ou solo)
-
-    Args:
-        geom_inicial: geometria inicial (sem hastes ou com poucas)
-        rho_eq      : ρ equivalente do solo [Ω·m]
-        ig_a        : corrente de malha IG [A]
-        etoque_adm_v: tensão de toque admissível [V]
-        epasso_adm_v: tensão de passo admissível [V]
-        n_hastes_min: número inicial de hastes
-        n_hastes_max: limite superior
-        incremento  : passo de incremento de hastes
-
-    Returns:
-        IteracaoMalha com geometria final, resultado e histórico.
+    Itera o número de hastes até atender (ou atingir limite).
+    Agora passa bitola para verifica_malha (correção P0).
     """
     historico = []
     n_hastes_atual = n_hastes_min
-    iteracoes = 0
+    geom = verif = res = None
 
     while n_hastes_atual <= n_hastes_max:
-        iteracoes += 1
-
         geom = GeometriaMalha(
             largura_m=geom_inicial.largura_m,
             comprimento_m=geom_inicial.comprimento_m,
@@ -202,42 +153,28 @@ def itera_num_hastes(
             haste_diametro_mm=geom_inicial.haste_diametro_mm,
             num_hastes=n_hastes_atual,
         )
-
         res = calcula_resistencia_e_tensoes(rho_eq, ig_a, geom)
         verif = verifica_malha(
-            em_v=res.em_v,
-            es_v=res.es_v,
-            gpr_v=res.gpr_v,
-            etoque_adm_v=etoque_adm_v,
-            epasso_adm_v=epasso_adm_v,
+            em_v=res.em_v, es_v=res.es_v, gpr_v=res.gpr_v,
+            etoque_adm_v=etoque_adm_v, epasso_adm_v=epasso_adm_v,
+            bitola_adotada_mm2=bitola_adotada_mm2,
+            bitola_calculada_mm2=bitola_calculada_mm2,
         )
-
         historico.append({
-            "iteracao": iteracoes,
+            "iteracao": len(historico) + 1,
             "n_hastes": n_hastes_atual,
             "rg_ohm": res.rg_adotado_ohm,
-            "em_v": res.em_v,
-            "es_v": res.es_v,
-            "gpr_v": res.gpr_v,
+            "em_v": res.em_v, "es_v": res.es_v, "gpr_v": res.gpr_v,
             "atende": verif.atende_geral,
         })
-
         if verif.atende_geral:
-            return IteracaoMalha(
-                geometria_final=geom,
-                resultado=res,
-                verificacao=verif,
-                iteracoes=iteracoes,
-                historico=historico,
-            )
-
+            break
         n_hastes_atual += incremento
 
-    # Não convergiu — retorna última configuração
     return IteracaoMalha(
         geometria_final=geom,
         resultado=res,
         verificacao=verif,
-        iteracoes=iteracoes,
+        iteracoes=len(historico),
         historico=historico,
     )

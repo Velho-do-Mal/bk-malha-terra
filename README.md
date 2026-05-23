@@ -1,149 +1,73 @@
-# BK Malha de Terra
+# BK Malha de Terra v2 — SaaS Multi-Tenant
 
-Aplicação Streamlit para elaboração de **memórias de cálculo de malha de aterramento de subestações**, conforme:
+> IEEE 80-2013 · NBR 15751 · NBR 7117 · Multi-tenant · Correções P0
 
-- **IEEE Std 80-2013** — *Guide for Safety in AC Substation Grounding*
-- **ABNT NBR 15751:2013** — Sistemas de aterramento de subestações
-- **ABNT NBR 7117:2020** — Medição da resistividade e estratificação do solo
+## O que mudou na v2
 
-Desenvolvida pela **Barabach & Knopp Engenharia e Tecnologia (BK Engenharia)**.
+### Multi-Tenancy
+- Tenant = empresa cliente; cada empresa vê apenas seus próprios projetos
+- Roles: `admin` (gerencia usuários) | `engenheiro` (edita) | `viewer` (leitura)
+- Isolamento duplo: FK `tenant_id` no banco + filtro obrigatório em todas as queries
 
----
+### Correções P0 (relatório técnico BK 22/05/2026)
+| Correção | Arquivo | Impacto |
+|---|---|---|
+| Fator Cp — crescimento da corrente | `core/corrente.py` | IG = Df·Sf·**Cp**·3I₀ |
+| Condutor bloqueia aprovação | `core/verificacao.py` | atende_geral = condutor AND tensões |
+| Critério GPR rastreável | `core/verificacao.py` | informa simplificado vs detalhado |
 
-## Funcionalidades
-
-- Estratificação do solo em 2 camadas (Sunde) a partir de medições de Wenner
-- Dimensionamento térmico do condutor (Sverak)
-- Cálculo de IG com fator de decremento Df
-- Tensões admissíveis Etoque/Epasso (50 ou 70 kg)
-- Resistência da malha (Sverak + Schwarz)
-- Tensões reais Em e Es (IEEE 80 §16.5)
-- Iteração automática de número de hastes
-- Posicionamento heurístico (cantos → bordas → interior)
-- Visualizações Plotly 2D/3D
-- Persistência em PostgreSQL (Neon) com revisões
-- **Geração de relatório Word .docx completo**
-
----
-
-## Stack
-
-| Camada | Tecnologia |
-|---|---|
-| Frontend | Streamlit |
-| Cálculo | Python (numpy, scipy) |
-| Banco | Neon PostgreSQL (SQLAlchemy + psycopg) |
-| Gráficos | Plotly (2D/3D) |
-| Relatório | python-docx + kaleido |
-| Deploy | Railway |
-| CI | GitHub Actions |
-
----
+### Novas telas
+- Tela de login/cadastro (trial 14 dias gratuito)
+- Painel admin: gerenciar usuários, ver limites do plano, alterar senha
 
 ## Estrutura
-
 ```
-bk-malha-terra/
-├── app.py                 # Entry point Streamlit
-├── core/                  # Cálculos IEEE 80
-│   ├── solo.py            # Wenner + Sunde
-│   ├── condutor.py        # Sverak
-│   ├── corrente.py        # IG, Df
-│   ├── tensoes.py         # Cs, Etoque, Epasso
-│   ├── resistencia.py     # Rg (Sverak + Schwarz), Em, Es
-│   ├── verificacao.py     # Critério IEEE 80 + iteração
-│   └── geometria.py       # Posicionamento de hastes
-├── data/                  # Persistência Neon
-│   ├── db.py              # Engine + sessions
-│   ├── models.py          # ORM
-│   └── repository.py      # CRUD
-├── ui/
-│   └── visualizacoes.py   # Gráficos Plotly
-├── relatorio/
-│   ├── gerador_word.py    # Geração .docx
-│   └── textos.py          # Metodologia/conclusão
+bk-malha-terra-v2/
+├── app.py                  ← auth gate no main()
+├── auth/
+│   ├── auth.py             ← bcrypt, sessão, CRUD usuários
+│   ├── pagina_login.py     ← login + cadastro
+│   └── pagina_admin.py     ← painel admin
+├── core/
+│   ├── corrente.py         ← + Cp (P0)
+│   └── verificacao.py      ← atende_condutor + criterio (P0)
+├── data/
+│   ├── models.py           ← Tenant + Usuario + tenant_id
+│   └── repository.py       ← todas queries com tenant_id
 ├── migrations/
-│   └── 001_schema_inicial.sql
-├── tests/                 # 60 testes unitários
-├── assets/                # Logo BK (colocar bk_logo.png aqui)
-├── .github/workflows/     # CI
-├── Procfile, railway.json, runtime.txt
-└── requirements.txt
+│   ├── 001_schema_inicial.sql
+│   └── 002_multitenancy.sql  ← NOVO
+├── scripts/
+│   └── setup_inicial.py    ← cria primeiro admin
+└── requirements.txt        ← + bcrypt>=4.1.0
 ```
 
----
-
-## Setup local
-
+## Deploy Railway (primeiro deploy)
 ```bash
-git clone https://github.com/Velho-do-Mal/bk-malha-terra.git
-cd bk-malha-terra
+# 1. Push
+git push origin main
 
-python -m venv .venv
-source .venv/bin/activate          # Linux/Mac
-# .venv\Scripts\activate            # Windows
+# 2. Variáveis de ambiente Railway:
+#    DATABASE_URL=postgresql://...neon.tech/neondb?sslmode=require
+#    DB_SCHEMA=bk_malha_terra
+#    ENVIRONMENT=production
 
-pip install -r requirements.txt
+# 3. Aplicar migration (terminal Railway ou psql):
+psql "$DATABASE_URL" -f migrations/002_multitenancy.sql
 
-cp .env.example .env
-# Editar .env com DATABASE_URL real do Neon
-
-psql "$DATABASE_URL" -f migrations/001_schema_inicial.sql
-
-PYTHONPATH=. pytest tests/ -v       # Roda os 60 testes
-
-streamlit run app.py                # http://localhost:8501
+# 4. Criar primeiro admin:
+python scripts/setup_inicial.py
 ```
 
----
-
-## Deploy Railway
-
+## Upgrade v1 → v2 (banco existente)
 ```bash
-railway login
-railway init
-
-railway variables set DATABASE_URL="postgresql://..."
-railway variables set DB_SCHEMA=bk_malha_terra
-
-railway up
-
-# Migration no Neon Console ou:
-psql "$DATABASE_URL" -f migrations/001_schema_inicial.sql
+psql "$DATABASE_URL" -f migrations/002_multitenancy.sql
+# A migration cria tenant padrão e migra projetos existentes automaticamente.
 ```
 
-Railway lê o `Procfile` e o `railway.json` automaticamente.
-
----
-
-## Segurança
-
-- Nunca commite `.env` (já no `.gitignore`)
-- `DATABASE_URL` lida exclusivamente do ambiente
-- Conexão Neon com `sslmode=require`
-- Rotação de credenciais: Neon Console → Roles → Reset password
-
----
-
-## Testes
-
-```bash
-PYTHONPATH=. pytest tests/ -v
-PYTHONPATH=. python tests/smoke_test_caso_real.py
-```
-
-Cobertura atual: **60 testes** (incluindo Anexo H.1 da IEEE 80).
-
----
-
-## Referências
-
-- IEEE Std 80-2013
-- ABNT NBR 15751, NBR 7117, NBR 5419, NBR 15749
-- MAMEDE FILHO, J. *Manual de Equipamentos Elétricos*
-- KINDERMANN, G. *Aterramento Elétrico*
-- SVERAK, J. G. (1984), SUNDE, E. D. (1968)
-
----
-
-Propriedade interna da BK Engenharia.
+## Planos
+| Plano | Projetos | Usuários |
+|---|---|---|
+| trial | 3 | 2 |
+| pro | 50 | 5 |
+| enterprise | ∞ | ∞ |

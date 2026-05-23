@@ -39,6 +39,7 @@ class ResultadoCorrente:
     """Resultado do cálculo da corrente de malha."""
     i_falta_3i0_a: float
     sf_div_corrente: float
+    cp_crescimento: float
     xr_ratio: float
     tf_s: float
     df_decremento: float
@@ -86,20 +87,25 @@ def corrente_malha_ig(
     sf_div_corrente: float,
     xr_ratio: float,
     tf_s: float,
+    cp_crescimento: float = 1.0,
     freq_hz: float = 60.0,
 ) -> ResultadoCorrente:
     """
     Calcula a corrente máxima de malha IG (eq. 70 IEEE 80).
 
+    IG = Df · Sf · Cp · 3I₀
+
     Args:
         i_falta_3i0_a  : corrente simétrica RMS de falta 3I₀ [A]
-        sf_div_corrente: fator de divisão (Tabela 10 IEEE 80)
-                         Valores típicos:
-                           - SE com cabo guarda + circuito subterrâneo: 0.4-0.6
-                           - SE só com cabo guarda: 0.6-0.8
-                           - SE isolada (sem cabo guarda/neutro): 1.0
+        sf_div_corrente: fator de divisão Sf (Tabela 10 IEEE 80)
         xr_ratio       : X/R no ponto de falta
         tf_s           : duração da falta [s]
+        cp_crescimento : fator de crescimento/projeção da corrente futura.
+                         IEEE 80 §15 recomenda usar a máxima corrente futura.
+                         Cp = 1.00 → sem crescimento previsto.
+                         Cp = 1.10 → crescimento moderado (~10%).
+                         Cp = 1.20 → crescimento conservador (~20%).
+                         Cp = 1.30 → estudo muito conservador.
         freq_hz        : frequência [Hz]
 
     Returns:
@@ -109,9 +115,11 @@ def corrente_malha_ig(
         raise ValueError("Corrente de falta deve ser positiva.")
     if not (0.0 < sf_div_corrente <= 1.0):
         raise ValueError("Sf deve estar entre 0 e 1.")
+    if cp_crescimento < 1.0:
+        raise ValueError("Cp deve ser >= 1.0 (crescimento nunca reduz a corrente de projeto).")
 
     df = fator_decremento(xr_ratio, tf_s, freq_hz)
-    ig = df * sf_div_corrente * i_falta_3i0_a
+    ig = df * sf_div_corrente * cp_crescimento * i_falta_3i0_a
 
     obs = []
     if df > 1.5:
@@ -133,6 +141,7 @@ def corrente_malha_ig(
     return ResultadoCorrente(
         i_falta_3i0_a=i_falta_3i0_a,
         sf_div_corrente=sf_div_corrente,
+        cp_crescimento=cp_crescimento,
         xr_ratio=xr_ratio,
         tf_s=tf_s,
         df_decremento=df,

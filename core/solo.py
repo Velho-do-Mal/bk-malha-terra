@@ -241,6 +241,58 @@ def rho_equivalente_simplificado(solo: SoloEstratificado,
     return (solo.h1 * solo.rho1 + (Lr - solo.h1) * solo.rho2) / Lr
 
 
+def rho_aparente_malha(solo: SoloEstratificado,
+                        profundidade_malha: float,
+                        comprimento_haste: float = 0.0) -> float:
+    """
+    Calcula ρ aparente para Sverak/Schwarz considerando estratificação 
+    do solo (IEEE 80 §13.4.2 + Tagg/Endrenyi).
+
+    Diferente de rho_equivalente_simplificado, esta função considera
+    que a malha (na profundidade h) injeta corrente em ambas as camadas.
+    Para solos com ρ₂ < ρ₁ (caso comum), o resultado é uma média
+    ponderada que reduz Rg adequadamente.
+
+    Fórmula adotada (média geométrica ponderada por profundidade):
+
+        Se Lr > h₁:
+            ρ_a = (h₁·ρ₁ + (Lr+h_malha-h₁)·ρ₂) / (Lr+h_malha)
+        Senão:
+            ρ_a = ρ₁  (haste só vê camada 1)
+
+    Para profundidade total de penetração d_total = h_malha + Lr.
+
+    Args:
+        solo              : solo estratificado
+        profundidade_malha: h em metros
+        comprimento_haste : Lr em metros (0 se sem hastes)
+
+    Returns:
+        ρ aparente [Ω·m] - valor para usar em Sverak/Schwarz/Em/Es
+    """
+    h_malha = profundidade_malha
+    Lr = comprimento_haste
+    h1 = solo.h1
+    
+    # Profundidade total que a malha "vê" (cabos + hastes)
+    profundidade_total = h_malha + Lr
+    
+    # Caso 1: tudo na camada 1
+    if profundidade_total <= h1:
+        return solo.rho1
+    
+    # Caso 2: atravessa a interface
+    parte_camada1 = max(0, h1 - h_malha)  # fração que ainda está em ρ1
+    parte_camada2 = profundidade_total - max(h_malha, h1)  # fração em ρ2
+    
+    if parte_camada1 + parte_camada2 == 0:
+        return solo.rho1
+    
+    rho_a = (parte_camada1 * solo.rho1 + parte_camada2 * solo.rho2) / \
+            (parte_camada1 + parte_camada2)
+    return float(rho_a)
+
+
 # ============================================================
 # UTILITÁRIOS
 # ============================================================

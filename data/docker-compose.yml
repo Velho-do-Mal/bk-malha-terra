@@ -1,0 +1,34 @@
+# =========================================================
+# BK Malha de Terra - PostgreSQL local para desenvolvimento
+# =========================================================
+# Subir:    docker compose up -d
+# Parar:    docker compose down
+# Apagar:   docker compose down -v   (deleta volume com dados)
+# Logs:     docker compose logs -f
+# =========================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bk-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bkdev
+      POSTGRES_PASSWORD: bkdev
+      POSTGRES_DB: bk_malha_terra
+    ports:
+      - "5433:5432"  # 5433 para não conflitar com Postgres do sistema
+    volumes:
+      - bk_pg_data:/var/lib/postgresql/data
+      # Schema é criado automaticamente pelo app via inicializa_banco()
+      # Se preferir aplicar via SQL, descomente:
+      # - ./migrations/001_schema_inicial.sql:/docker-entrypoint-initdb.d/001.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bkdev -d bk_malha_terra"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  bk_pg_data:
+    name: bk_malha_terra_pg_data

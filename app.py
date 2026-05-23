@@ -2,15 +2,16 @@
 app.py
 ======
 
-BK Malha de Terra - Aplicação Streamlit principal.
+BK Malha de Terra v2 — SaaS Multi-Tenant
+Dimensionamento de malhas de aterramento IEEE 80 / NBR 15751
 
-Estrutura em abas:
-    1. Projeto      - identificação (cliente, número, revisão)
-    2. Solo         - medições Wenner + estratificação
-    3. Geometria    - dimensões SE, malha, brita, hastes
-    4. Curto-circuito - 3I0, X/R, tempo, Sf
-    5. Cálculo      - executa pipeline IEEE 80 e mostra resultados
-    6. Relatório    - gera Word (.docx) - ATIVADO NA FATIA 4
+Novidades v2:
+    - Autenticação (login/cadastro por empresa)
+    - Multi-tenancy: cada empresa vê apenas seus projetos
+    - Fator Cp de crescimento da corrente (P0 do relatório técnico)
+    - atende_condutor bloqueia aprovação (P0 do relatório técnico)
+    - Critério GPR correto na verificação final (P0)
+    - Página de administração de usuários
 
 Rodar:
     streamlit run app.py
@@ -20,11 +21,17 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from datetime import date
 
 import numpy as np
 import pandas as pd
 import streamlit as st
+
+# ---- Auth (v2) ----
+from auth.auth import verificar_sessao, tenant_id_atual, usuario_id_atual, is_viewer
+from auth.pagina_login import render_login, render_sidebar_usuario
+from auth.pagina_admin import render_admin
 
 # ---- Core ----
 from core.condutor import Material, dimensiona_condutor
@@ -32,7 +39,8 @@ from core.corrente import corrente_malha_ig
 from core.geometria import gera_cabos_malha, posiciona_hastes
 from core.resistencia import GeometriaMalha, calcula_resistencia_e_tensoes
 from core.solo import (
-    MedicaoWenner, estratifica_2_camadas, rho_equivalente_simplificado,
+    MedicaoWenner, estratifica_2_camadas, rho_aparente_malha,
+    rho_equivalente_simplificado,
 )
 from core.tensoes import calcula_tensoes_admissiveis
 from core.verificacao import itera_num_hastes
@@ -46,6 +54,7 @@ from ui.visualizacoes import (
     plot_curva_wenner, plot_iteracao_hastes, plot_mapa_tensao_3d,
     plot_planta_malha, plot_verificacao,
 )
+
 
 
 # ============================================================
@@ -73,17 +82,24 @@ def sidebar_projetos():
         if st.button("Testar conexão"):
             r = testa_conexao()
             if r["status"] == "ok":
-                st.success(f"OK · {r['schema']}")
-                st.caption(r["versao_postgres"][:80])
+                emoji = "🗃️" if r["backend"] == "SQLite" else "🐘"
+                st.success(f"{emoji} {r['backend']} · {r['tabelas_existentes']} tabelas")
+                st.caption(r["versao"][:80])
             else:
                 st.error(f"Erro: {r.get('erro', '?')}")
 
     st.sidebar.divider()
+
+    # ── Info do usuário e empresa ────────────────────────────────────────────
+    render_sidebar_usuario()
+
+    st.sidebar.divider()
     st.sidebar.subheader("Projeto atual")
 
-    # Lista projetos
+    # Lista apenas projetos do tenant logado
+    tid = tenant_id_atual()
     try:
-        projetos = repo.lista_projetos(limit=50)
+        projetos = repo.lista_projetos(tenant_id=tid, limit=50) if tid else []
     except Exception as e:
         st.sidebar.error(f"Banco indisponível: {e}")
         projetos = []
@@ -115,7 +131,7 @@ def aba_projeto():
     st.header("1. Identificação do Projeto")
 
     pid = st.session_state.get("projeto_id")
-    p = repo.busca_projeto(pid) if pid else None
+    p = repo.busca_projeto(pid, tenant_id=tenant_id_atual()) if pid else None
 
     col1, col2 = st.columns(2)
     with col1:
@@ -175,6 +191,8 @@ def aba_projeto():
                 st.success(f"Projeto #{pid} atualizado.")
             else:
                 new_id = repo.cria_projeto(
+                    tenant_id=tenant_id_atual(),
+                    criado_por_id=usuario_id_atual(),
                     cliente=cliente, nome_projeto=nome, numero_projeto=numero,
                     revisao=revisao, responsavel_tecnico=responsavel,
                     crea_responsavel=crea, concessionaria=concessionaria,
@@ -199,7 +217,7 @@ def aba_solo():
         return
 
     pid = st.session_state["projeto_id"]
-    p = repo.busca_projeto(pid)
+    p = repo.busca_projeto(pid, tenant_id=tenant_id_atual())
 
     st.markdown("""
     Insira pelo menos **4 medições** com espaçamentos crescentes (recomendado:
@@ -258,7 +276,9 @@ def aba_solo():
                 # Persiste no banco
                 repo.salva_medicoes_wenner(
                     pid,
-                    [(m.espacamento_m, m.resistencia_ohm) for m in medicoes],
+                    tenant_id=tenant_id_atual(),
+                    medicoes=[{"espacamento_m": m.espacamento_m, "resistencia_ohm": m.resistencia_ohm}
+                               for m in medicoes],
                 )
 
                 st.success("Estratificação calculada e salva.")
@@ -297,7 +317,7 @@ def aba_geometria():
         return
 
     pid = st.session_state["projeto_id"]
-    p = repo.busca_projeto(pid)
+    p = repo.busca_projeto(pid, tenant_id=tenant_id_atual())
     de = p.dados_entrada if p else None
 
     st.subheader("Dimensões da SE")
@@ -352,6 +372,40 @@ def aba_geometria():
         }[v],
     )
 
+    st.subheader("Condutor da malha")
+    col1, col2 = st.columns(2)
+    condutor_material = col1.selectbox(
+        "Material do condutor",
+        options=["cobre_nu", "cobre_comercial", "copperweld_40",
+                 "copperweld_30", "aluminio_5005", "aco_galvanizado"],
+        index=0,
+        format_func=lambda v: {
+            "cobre_nu": "Cobre nu (100% IACS) - padrão",
+            "cobre_comercial": "Cobre comercial (97% IACS)",
+            "copperweld_40": "Copperweld 40% IACS",
+            "copperweld_30": "Copperweld 30% IACS",
+            "aluminio_5005": "Alumínio liga 5005",
+            "aco_galvanizado": "Aço galvanizado",
+        }[v],
+        help="Cobre nu é o mais comum em SE no Brasil",
+    )
+    bitolas_disponiveis = [16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300]
+    bitola_default_idx = (
+        bitolas_disponiveis.index(int(float(de.condutor_bitola_mm2)))
+        if (de and de.condutor_bitola_mm2
+            and int(float(de.condutor_bitola_mm2)) in bitolas_disponiveis)
+        else 3  # 50 mm² (mínimo prático BK)
+    )
+    bitola_cabo = col2.selectbox(
+        "Bitola do cabo [mm²]",
+        options=bitolas_disponiveis,
+        index=bitola_default_idx,
+        format_func=lambda v: f"{v} mm²" + (" (mín. BK)" if v == 50 else ""),
+        help="Bitola que será adotada. O app verifica se atende Sverak "
+             "no cálculo. Se a calculada exceder a escolhida, aparecerá "
+             "alerta para você revisar.",
+    )
+
     st.subheader("Hastes copperweld")
     col1, col2 = st.columns(2)
     haste_l = col1.number_input(
@@ -393,7 +447,7 @@ def aba_geometria():
                 }
 
             repo.salva_dados_entrada(
-                pid,
+                pid, tenant_id=tenant_id_atual(),
                 largura_m=largura,
                 comprimento_m=comprimento,
                 profundidade_malha_m=profundidade,
@@ -403,6 +457,8 @@ def aba_geometria():
                 brita_resistividade_ohm=float(brita_rho),
                 haste_comprimento_m=haste_l,
                 haste_diametro_mm=float(haste_d_opt),
+                condutor_material=condutor_material,
+                condutor_bitola_mm2=float(bitola_cabo),
                 **campos_existentes_outros,
             )
             st.success("Geometria salva.")
@@ -435,7 +491,7 @@ def aba_curto():
         return
 
     pid = st.session_state["projeto_id"]
-    p = repo.busca_projeto(pid)
+    p = repo.busca_projeto(pid, tenant_id=tenant_id_atual())
     de = p.dados_entrada if p else None
 
     st.markdown("""
@@ -477,6 +533,44 @@ def aba_curto():
         help="50kg é mais conservador, padrão das concessionárias BR.",
     )
 
+    # ── Fator Cp (P0 do relatório técnico) ──────────────────────────────────
+    st.markdown("---")
+    st.subheader("Fator de crescimento da corrente (Cp)")
+    st.caption(
+        "IEEE 80 §15 recomenda usar a máxima corrente futura do sistema. "
+        "Cp é um fator de projeto — não é parâmetro direto da norma, mas boa prática para sistemas em expansão."
+    )
+    cp_opcoes = {
+        "1,00 — Sistema atual, sem expansão prevista": 1.00,
+        "1,10 — Expansão moderada (~10%)": 1.10,
+        "1,20 — Expansão relevante (~20%) — conservador": 1.20,
+        "1,30 — Estudo muito conservador": 1.30,
+        "Personalizado": None,
+    }
+    cp_sel = st.selectbox(
+        "Cp — Fator de crescimento",
+        list(cp_opcoes.keys()),
+        index=0 if not de else (
+            0 if float(de.cp_crescimento or 1.0) == 1.00 else
+            1 if float(de.cp_crescimento or 1.0) == 1.10 else
+            2 if float(de.cp_crescimento or 1.0) == 1.20 else
+            3 if float(de.cp_crescimento or 1.0) == 1.30 else 4
+        ),
+    )
+    cp_val = cp_opcoes[cp_sel]
+    if cp_val is None:
+        cp_val = st.number_input(
+            "Cp personalizado", value=float(de.cp_crescimento or 1.0) if de else 1.0,
+            min_value=1.0, max_value=2.0, step=0.05,
+        )
+
+    if cp_val > 1.0:
+        st.info(
+            f"IG será multiplicado por Cp = {cp_val:.2f}. "
+            f"Ex.: se 3I₀ = {i_falta:.1f} kA → IG = Df × Sf × {cp_val:.2f} × 3I₀ "
+            f"≈ {i_falta * cp_val:.2f} kA (estimativa sem Df/Sf)."
+        )
+
     if st.button("💾 Salvar dados elétricos", type="primary"):
         try:
             # mantém geometria existente
@@ -504,6 +598,7 @@ def aba_curto():
                 sf_div_corrente=sf,
                 xr_ratio=xr,
                 peso_pessoa_kg=peso,
+                cp_crescimento=cp_val,
                 **campos_geom,
             )
             st.success("Dados elétricos salvos.")
@@ -523,7 +618,7 @@ def aba_calculo():
         return
 
     pid = st.session_state["projeto_id"]
-    p = repo.busca_projeto(pid)
+    p = repo.busca_projeto(pid, tenant_id=tenant_id_atual())
 
     if not p or not p.dados_entrada or not p.medicoes_wenner:
         st.warning("Preencha solo (aba 2), geometria (aba 3) e dados elétricos (aba 4).")
@@ -546,23 +641,41 @@ def aba_calculo():
                     for m in p.medicoes_wenner
                 ]
                 solo = estratifica_2_camadas(medicoes)
-                rho_eq = rho_equivalente_simplificado(solo, float(de.haste_comprimento_m))
+                # Usa rho aparente considerando malha + hastes (mais preciso
+                # para solos estratificados que rho_equivalente_simplificado)
+                rho_eq = rho_aparente_malha(
+                    solo,
+                    profundidade_malha=float(de.profundidade_malha_m),
+                    comprimento_haste=float(de.haste_comprimento_m),
+                )
 
-                # 2. Corrente
+                # 2. Corrente — com fator Cp (P0 do relatório técnico BK)
                 corrente = corrente_malha_ig(
                     i_falta_3i0_a=float(de.i_falta_3i0_ka) * 1000.0,
                     sf_div_corrente=float(de.sf_div_corrente),
                     xr_ratio=float(de.xr_ratio),
                     tf_s=float(de.tempo_eliminacao_s),
+                    cp_crescimento=float(de.cp_crescimento or 1.0),
                 )
 
-                # 3. Condutor
+                # 3. Condutor — bitola mínima térmica; usuário pode sobrescrever
+                # P0: se bitola adotada < calculada, a aprovação será BLOQUEADA
                 cond = dimensiona_condutor(
                     corrente_a=corrente.ig_a,
                     tempo_s=float(de.tempo_eliminacao_s),
                     material=Material(de.condutor_material),
                     temperatura_max_c=250.0,
                 )
+                bitola_usuario = float(de.condutor_bitola_mm2 or cond.bitola_adotada_mm2)
+                cond.bitola_adotada_mm2 = bitola_usuario
+
+                atende_condutor = bitola_usuario >= cond.bitola_calculada_mm2
+                if not atende_condutor:
+                    cond.observacoes.append(
+                        f"❌ CONDUTOR REPROVADO: bitola adotada {bitola_usuario:.0f} mm² "
+                        f"< mínimo calculado {cond.bitola_calculada_mm2:.0f} mm². "
+                        "A aprovação do projeto será BLOQUEADA até a bitola ser corrigida."
+                    )
 
                 # 4. Tensões admissíveis
                 tensoes_adm = calcula_tensoes_admissiveis(
@@ -579,7 +692,7 @@ def aba_calculo():
                     comprimento_m=float(de.comprimento_m),
                     profundidade_m=float(de.profundidade_malha_m),
                     espac_malha_m=float(de.espac_malha_principal_m),
-                    bitola_cabo_mm2=cond.bitola_adotada_mm2,
+                    bitola_cabo_mm2=bitola_usuario,
                     haste_comprimento_m=float(de.haste_comprimento_m),
                     haste_diametro_mm=float(de.haste_diametro_mm),
                     num_hastes=4,
@@ -590,6 +703,8 @@ def aba_calculo():
                     ig_a=corrente.ig_a,
                     etoque_adm_v=tensoes_adm.etoque_v,
                     epasso_adm_v=tensoes_adm.epasso_v,
+                    bitola_adotada_mm2=bitola_usuario,
+                    bitola_calculada_mm2=cond.bitola_calculada_mm2,
                     n_hastes_min=4,
                     n_hastes_max=120,
                     incremento=4,
@@ -612,15 +727,17 @@ def aba_calculo():
 
                 # Salva no banco
                 repo.salva_resultado(
-                    pid,
+                    pid, tenant_id=tenant_id_atual(),
                     rho1_ohm_m=solo.rho1, rho2_ohm_m=solo.rho2,
                     h1_m=solo.h1, rho_equivalente=rho_eq,
                     bitola_calculada_mm2=cond.bitola_calculada_mm2,
                     bitola_adotada_mm2=cond.bitola_adotada_mm2,
+                    atende_condutor=atende_condutor,
                     cs_brita=tensoes_adm.cs_brita,
                     etoque_admissivel_v=tensoes_adm.etoque_v,
                     epasso_admissivel_v=tensoes_adm.epasso_v,
                     df_decremento=corrente.df_decremento,
+                    cp_crescimento=corrente.cp_crescimento,
                     ig_corrente_malha_a=corrente.ig_a,
                     rg_sverak_ohm=iteracao.resultado.rg_sverak_ohm,
                     rg_schwarz_ohm=iteracao.resultado.rg_schwarz_ohm,
@@ -712,6 +829,132 @@ def aba_calculo():
             for o in obs_all:
                 st.markdown(f"- {o}")
 
+    # Análise de sensibilidade quando NÃO atende
+    if not verif.atende_geral:
+        with st.expander("🔧 Análise de sensibilidade — o que faria atender?",
+                          expanded=True):
+            st.caption(
+                "Cálculos hipotéticos variando UM parâmetro de cada vez "
+                "para identificar a alavanca mais eficaz."
+            )
+            de_atual = repo.busca_projeto(pid, tenant_id=tenant_id_atual()).dados_entrada
+            geom_base = calc["geom_final"]
+            ig_atual = calc["corrente"].ig_a
+
+            cenarios = []
+
+            # 1. Reduzir tempo de eliminação
+            for tc_novo in [0.3, 0.2, 0.1]:
+                if tc_novo < float(de_atual.tempo_eliminacao_s):
+                    tens_novo = calcula_tensoes_admissiveis(
+                        rho_solo=calc["solo"].rho1,
+                        rho_brita=float(de_atual.brita_resistividade_ohm),
+                        h_brita=float(de_atual.brita_espessura_m),
+                        tempo_s=tc_novo,
+                        peso_kg=int(de_atual.peso_pessoa_kg),
+                    )
+                    res_novo = calcula_resistencia_e_tensoes(
+                        calc["rho_eq"], ig_atual, geom_base
+                    )
+                    atende = (res_novo.em_v <= tens_novo.etoque_v
+                              and res_novo.es_v <= tens_novo.epasso_v)
+                    cenarios.append({
+                        "Mudança": f"tc: {de_atual.tempo_eliminacao_s}s → {tc_novo}s",
+                        "Em [V]": f"{res_novo.em_v:.0f}",
+                        "Etoque adm [V]": f"{tens_novo.etoque_v:.0f}",
+                        "Atende?": "✓" if atende else "✗",
+                    })
+
+            # 2. Aumentar brita
+            for h_brita_nova in [0.15, 0.20]:
+                if h_brita_nova > float(de_atual.brita_espessura_m):
+                    tens_novo = calcula_tensoes_admissiveis(
+                        rho_solo=calc["solo"].rho1,
+                        rho_brita=float(de_atual.brita_resistividade_ohm),
+                        h_brita=h_brita_nova,
+                        tempo_s=float(de_atual.tempo_eliminacao_s),
+                        peso_kg=int(de_atual.peso_pessoa_kg),
+                    )
+                    res_novo = calcula_resistencia_e_tensoes(
+                        calc["rho_eq"], ig_atual, geom_base
+                    )
+                    atende = (res_novo.em_v <= tens_novo.etoque_v
+                              and res_novo.es_v <= tens_novo.epasso_v)
+                    cenarios.append({
+                        "Mudança": f"brita: {de_atual.brita_espessura_m}m → {h_brita_nova}m",
+                        "Em [V]": f"{res_novo.em_v:.0f}",
+                        "Etoque adm [V]": f"{tens_novo.etoque_v:.0f}",
+                        "Atende?": "✓" if atende else "✗",
+                    })
+
+            # 3. Hastes mais profundas
+            for Lr_novo in [5.0, 8.0, 10.0]:
+                if Lr_novo > float(de_atual.haste_comprimento_m):
+                    rho_novo = rho_aparente_malha(
+                        calc["solo"],
+                        profundidade_malha=float(de_atual.profundidade_malha_m),
+                        comprimento_haste=Lr_novo,
+                    )
+                    geom_novo = GeometriaMalha(
+                        largura_m=geom_base.largura_m,
+                        comprimento_m=geom_base.comprimento_m,
+                        profundidade_m=geom_base.profundidade_m,
+                        espac_malha_m=geom_base.espac_malha_m,
+                        bitola_cabo_mm2=geom_base.bitola_cabo_mm2,
+                        haste_comprimento_m=Lr_novo,
+                        haste_diametro_mm=geom_base.haste_diametro_mm,
+                        num_hastes=geom_base.num_hastes,
+                    )
+                    res_novo = calcula_resistencia_e_tensoes(
+                        rho_novo, ig_atual, geom_novo
+                    )
+                    atende = (res_novo.em_v <= tensoes_adm.etoque_v
+                              and res_novo.es_v <= tensoes_adm.epasso_v)
+                    cenarios.append({
+                        "Mudança": f"haste: {de_atual.haste_comprimento_m}m → {Lr_novo}m "
+                                   f"(ρ_eq: {calc['rho_eq']:.0f}→{rho_novo:.0f})",
+                        "Em [V]": f"{res_novo.em_v:.0f}",
+                        "Etoque adm [V]": f"{tensoes_adm.etoque_v:.0f}",
+                        "Atende?": "✓" if atende else "✗",
+                    })
+
+            # 4. Reduzir espaçamento da malha
+            for D_novo in [2.5, 2.0, 1.5]:
+                if D_novo < float(de_atual.espac_malha_principal_m):
+                    geom_novo = GeometriaMalha(
+                        largura_m=geom_base.largura_m,
+                        comprimento_m=geom_base.comprimento_m,
+                        profundidade_m=geom_base.profundidade_m,
+                        espac_malha_m=D_novo,
+                        bitola_cabo_mm2=geom_base.bitola_cabo_mm2,
+                        haste_comprimento_m=geom_base.haste_comprimento_m,
+                        haste_diametro_mm=geom_base.haste_diametro_mm,
+                        num_hastes=geom_base.num_hastes,
+                    )
+                    res_novo = calcula_resistencia_e_tensoes(
+                        calc["rho_eq"], ig_atual, geom_novo
+                    )
+                    atende = (res_novo.em_v <= tensoes_adm.etoque_v
+                              and res_novo.es_v <= tensoes_adm.epasso_v)
+                    cenarios.append({
+                        "Mudança": f"D: {de_atual.espac_malha_principal_m}m → {D_novo}m",
+                        "Em [V]": f"{res_novo.em_v:.0f}",
+                        "Etoque adm [V]": f"{tensoes_adm.etoque_v:.0f}",
+                        "Atende?": "✓" if atende else "✗",
+                    })
+
+            if cenarios:
+                import pandas as pd
+                st.dataframe(
+                    pd.DataFrame(cenarios), use_container_width=True,
+                    hide_index=True,
+                )
+            st.info(
+                "💡 **Dica:** se nenhum cenário individual atende, "
+                "combine 2-3 mudanças (ex: hastes 5m + brita 0,15m + tc 0,3s). "
+                "O cálculo isolado mostra qual alavanca é mais eficaz."
+            )
+
     # Gráficos
     st.divider()
     st.subheader("📈 Visualizações")
@@ -728,7 +971,7 @@ def aba_calculo():
         )
 
     with tab2:
-        de = repo.busca_projeto(pid).dados_entrada
+        de = repo.busca_projeto(pid, tenant_id=tenant_id_atual()).dados_entrada
         st.plotly_chart(
             plot_planta_malha(
                 largura=float(de.largura_m),
@@ -741,7 +984,7 @@ def aba_calculo():
         )
 
     with tab3:
-        de = repo.busca_projeto(pid).dados_entrada
+        de = repo.busca_projeto(pid, tenant_id=tenant_id_atual()).dados_entrada
         st.plotly_chart(
             plot_mapa_tensao_3d(
                 largura=float(de.largura_m),
@@ -779,7 +1022,7 @@ def aba_relatorio():
         st.warning("Selecione ou crie um projeto primeiro.")
         return
 
-    p = repo.busca_projeto(pid)
+    p = repo.busca_projeto(pid, tenant_id=tenant_id_atual())
     if not p or not p.resultado or not p.dados_entrada:
         st.warning("Execute o cálculo (aba 5) antes de gerar o relatório.")
         return
@@ -808,53 +1051,90 @@ def aba_relatorio():
 
     if st.button("📄 Gerar relatório Word", type="primary"):
         from relatorio.gerador_word import gera_relatorio_word, nome_arquivo_padrao
+        from relatorio.exportador_imagens import (
+            exporta_curva_wenner, exporta_planta_malha,
+            exporta_verificacao, exporta_mapa_tensao,
+        )
+        from ui.visualizacoes import (
+            plot_curva_wenner, plot_planta_malha,
+            plot_mapa_tensao_3d, plot_verificacao,
+        )
+
         with st.spinner("Gerando relatório..."):
             try:
-                # Exporta gráficos como PNG
                 imagens = {}
+                falhas_export = []
+
                 if calc:
                     de = p.dados_entrada
                     res = calc["iteracao"].resultado
                     tensoes_adm = calc["tensoes_adm"]
-                    try:
-                        # 1. Curva Wenner
-                        from ui.visualizacoes import (
-                            plot_curva_wenner, plot_planta_malha,
-                            plot_mapa_tensao_3d, plot_verificacao,
-                        )
-                        fig_w = plot_curva_wenner(calc["solo"] and st.session_state.get("medicoes") or [], calc["solo"]) \
-                            if st.session_state.get("medicoes") else None
-                        if fig_w:
-                            imagens["wenner"] = fig_w.to_image(format="png", width=900, height=500, scale=2)
 
-                        # 2. Planta
-                        fig_p = plot_planta_malha(
-                            float(de.largura_m), float(de.comprimento_m),
-                            calc["cabos"], calc["hastes"],
-                            titulo=f"Malha proposta - {calc['geom_final'].num_hastes} hastes",
+                    # 1. Curva Wenner
+                    medicoes_sess = st.session_state.get("medicoes")
+                    if medicoes_sess and calc.get("solo"):
+                        fig_w = plot_curva_wenner(medicoes_sess, calc["solo"])
+                        img = exporta_curva_wenner(
+                            fig_w, medicoes_sess, calc["solo"]
                         )
-                        imagens["planta"] = fig_p.to_image(format="png", width=900, height=700, scale=2)
+                        if img:
+                            imagens["wenner"] = img
+                        else:
+                            falhas_export.append("Curva de Wenner")
 
-                        # 3. Verificação
-                        fig_v = plot_verificacao(
-                            res.em_v, res.es_v,
-                            tensoes_adm.etoque_v, tensoes_adm.epasso_v,
-                        )
-                        imagens["verif"] = fig_v.to_image(format="png", width=900, height=500, scale=2)
+                    # 2. Planta da malha
+                    fig_p = plot_planta_malha(
+                        float(de.largura_m), float(de.comprimento_m),
+                        calc["cabos"], calc["hastes"],
+                        titulo=f"Malha proposta - {calc['geom_final'].num_hastes} hastes",
+                    )
+                    img = exporta_planta_malha(
+                        fig_p,
+                        float(de.largura_m), float(de.comprimento_m),
+                        calc["cabos"], calc["hastes"],
+                        f"Malha proposta - {calc['geom_final'].num_hastes} hastes",
+                    )
+                    if img:
+                        imagens["planta"] = img
+                    else:
+                        falhas_export.append("Planta da malha")
 
-                        # 4. Mapa 3D
-                        fig_3d = plot_mapa_tensao_3d(
-                            float(de.largura_m), float(de.comprimento_m),
-                            res.rg_adotado_ohm, calc["corrente"].ig_a,
-                            res.em_v, tensoes_adm.etoque_v,
-                        )
-                        imagens["mapa3d"] = fig_3d.to_image(format="png", width=900, height=600, scale=2)
-                    except Exception as e:
-                        st.warning(
-                            f"Não foi possível exportar gráficos como imagem: {e}. "
-                            "Instale `kaleido` (já está em requirements.txt). "
-                            "Relatório será gerado sem figuras."
-                        )
+                    # 3. Verificação
+                    fig_v = plot_verificacao(
+                        res.em_v, res.es_v,
+                        tensoes_adm.etoque_v, tensoes_adm.epasso_v,
+                    )
+                    img = exporta_verificacao(
+                        fig_v, res.em_v, res.es_v,
+                        tensoes_adm.etoque_v, tensoes_adm.epasso_v,
+                    )
+                    if img:
+                        imagens["verif"] = img
+                    else:
+                        falhas_export.append("Gráfico de verificação")
+
+                    # 4. Mapa 3D (fallback é 2D contour - aceitável para Word)
+                    fig_3d = plot_mapa_tensao_3d(
+                        float(de.largura_m), float(de.comprimento_m),
+                        res.rg_adotado_ohm, calc["corrente"].ig_a,
+                        res.em_v, tensoes_adm.etoque_v,
+                    )
+                    img = exporta_mapa_tensao(
+                        fig_3d,
+                        float(de.largura_m), float(de.comprimento_m),
+                        res.em_v, tensoes_adm.etoque_v,
+                    )
+                    if img:
+                        imagens["mapa3d"] = img
+                    else:
+                        falhas_export.append("Mapa de tensão")
+
+                if falhas_export:
+                    st.warning(
+                        f"⚠️ Não foi possível exportar: "
+                        f"{', '.join(falhas_export)}. "
+                        "O relatório vai marcar como '[Figura ausente]'."
+                    )
 
                 # Logo BK (se existir)
                 logo = os.getenv("BK_LOGO_PATH", "assets/bk_logo.png")
@@ -865,10 +1145,13 @@ def aba_relatorio():
                 nome_arq = nome_arquivo_padrao(p)
 
                 # Registra no banco
-                repo.registra_relatorio(pid, nome_arq, p.responsavel_tecnico)
+                repo.registra_relatorio(pid, tenant_id=tenant_id_atual(), nome_arquivo=nome_arq, gerado_por=p.responsavel_tecnico)
 
                 # Disponibiliza download
-                st.success(f"✅ Relatório gerado ({len(docx_bytes)/1024:.0f} KB)")
+                st.success(
+                    f"✅ Relatório gerado ({len(docx_bytes)/1024:.0f} KB) · "
+                    f"{len(imagens)} de 4 figuras incluídas"
+                )
                 st.download_button(
                     label=f"⬇️ Baixar {nome_arq}",
                     data=docx_bytes,
@@ -880,15 +1163,18 @@ def aba_relatorio():
                 import traceback
                 st.code(traceback.format_exc())
 
-    # Histórico de relatórios gerados
-    if p.relatorios:
+    # Histórico de relatórios gerados (busca em sessão nova - evita
+    # DetachedInstanceError ao acessar relacionamento de objeto ORM
+    # de sessão já fechada)
+    relatorios = repo.lista_relatorios_de(pid)
+    if relatorios:
         st.divider()
         st.subheader("📁 Histórico de relatórios gerados")
-        for r in sorted(p.relatorios, key=lambda x: x.gerado_em, reverse=True):
+        for r in relatorios:
             st.text(
-                f"  {r.gerado_em.strftime('%d/%m/%Y %H:%M')} — "
-                f"{r.nome_arquivo}"
-                + (f" (por {r.gerado_por})" if r.gerado_por else "")
+                f"  {r['gerado_em'].strftime('%d/%m/%Y %H:%M')} — "
+                f"{r['nome_arquivo']}"
+                + (f" (por {r['gerado_por']})" if r['gerado_por'] else "")
             )
 
 
@@ -897,6 +1183,22 @@ def aba_relatorio():
 # ============================================================
 
 def main():
+    # ── AUTH GATE — deve ser a primeira coisa executada ───────────────────────
+    # Se não autenticado, mostra apenas a tela de login e para.
+    autenticado = render_login()
+    if not autenticado:
+        st.stop()
+
+    # ── Página de administração (admin only) ──────────────────────────────────
+    if st.session_state.get("pagina_admin"):
+        render_admin()
+        st.stop()
+
+    # ── App principal (apenas para usuários autenticados) ─────────────────────
+    # Bloqueia edição para viewers
+    if is_viewer():
+        st.info("🔍 Você está em modo de visualização. Contate o administrador para editar projetos.")
+
     sidebar_projetos()
 
     abas = st.tabs([
@@ -916,8 +1218,9 @@ def main():
 
     st.sidebar.divider()
     st.sidebar.caption(
-        "BK Malha de Terra v1.0\n\n"
-        "IEEE 80-2013 · NBR 15751 · NBR 7117"
+        "BK Malha de Terra v2.0\n\n"
+        "IEEE 80-2013 · NBR 15751 · NBR 7117\n"
+        "Multi-tenant SaaS · BK Engenharia"
     )
 
 

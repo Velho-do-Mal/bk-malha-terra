@@ -1,11 +1,8 @@
 """
-data/repository.py
-==================
-
-Camada de repositório (CRUD) para projetos de malha de terra.
-Centraliza o acesso ao banco para que a UI Streamlit fique limpa.
-
-Padrão: cada função abre/fecha sua própria sessão via get_session().
+data/repository.py — BK Malha de Terra v2 (Multi-Tenant)
+=========================================================
+Todas as funções recebem tenant_id obrigatório.
+Garante isolamento: nenhuma query retorna dados de outro tenant.
 """
 
 from __future__ import annotations
@@ -18,15 +15,17 @@ from sqlalchemy.orm import selectinload
 
 from data.db import get_session
 from data.models import (
-    DadosEntrada, Projeto, RelatorioGerado, Resultado, SoloWenner
+    DadosEntrada, Projeto, RelatorioGerado, Resultado,
+    SoloWenner, Tenant, Usuario,
 )
+from data.sanitizacao import sanitiza_kwargs, to_python
 
 
-# ============================================================
-# PROJETOS - CRUD
-# ============================================================
+# ─── PROJETOS ────────────────────────────────────────────────────────────────
 
 def cria_projeto(
+    tenant_id: int,
+    criado_por_id: Optional[int],
     cliente: str,
     nome_projeto: str,
     numero_projeto: str,
@@ -37,14 +36,21 @@ def cria_projeto(
     data_calculo: Optional[date] = None,
     observacoes: Optional[str] = None,
 ) -> int:
-    """
-    Cria um novo projeto e retorna o ID.
-
-    Raises:
-        IntegrityError: se (numero_projeto, revisao) já existir.
-    """
+    """Cria projeto e retorna ID. Isolado por tenant_id."""
     with get_session() as s:
+        # Verifica limite do plano
+        tenant = s.query(Tenant).filter_by(id=tenant_id).first()
+        if tenant:
+            n = s.query(Projeto).filter_by(tenant_id=tenant_id).count()
+            if n >= tenant.max_projetos:
+                raise RuntimeError(
+                    f"Limite de {tenant.max_projetos} projetos do plano "
+                    f"{tenant.plano} atingido. Faça upgrade para continuar."
+                )
+
         p = Projeto(
+            tenant_id=tenant_id,
+            criado_por_id=criado_por_id,
             cliente=cliente,
             nome_projeto=nome_projeto,
             numero_projeto=numero_projeto,
@@ -56,161 +62,175 @@ def cria_projeto(
             observacoes=observacoes,
         )
         s.add(p)
-        s.flush()  # gera o id
+        s.flush()
         return p.id
 
 
-def busca_projeto(projeto_id: int) -> Optional[Projeto]:
-    """
-    Retorna o projeto com filhos eager-loaded (medições, dados, resultado).
-    """
+def lista_projetos(tenant_id: int, limit: int = 100) -> list[Projeto]:
+    """Lista projetos DO TENANT. Nunca retorna projetos de outros tenants."""
     with get_session() as s:
         stmt = (
             select(Projeto)
-            .where(Projeto.id == projeto_id)
+            .where(Projeto.tenant_id == tenant_id)
+            .order_by(Projeto.atualizado_em.desc())
+            .limit(limit)
+        )
+        return list(s.scalars(stmt).all())
+
+
+def busca_projeto(projeto_id: int, tenant_id: int) -> Optional[Projeto]:
+    """Busca projeto por ID, garantindo que pertence ao tenant."""
+    with get_session() as s:
+        stmt = (
+            select(Projeto)
+            .where(Projeto.id == projeto_id, Projeto.tenant_id == tenant_id)
             .options(
                 selectinload(Projeto.medicoes_wenner),
                 selectinload(Projeto.dados_entrada),
                 selectinload(Projeto.resultado),
+                selectinload(Projeto.relatorios),
             )
         )
-        return s.execute(stmt).scalar_one_or_none()
+        return s.scalars(stmt).first()
 
 
-def lista_projetos(limit: int = 100) -> list[Projeto]:
-    """Lista projetos ordenados por data de cálculo (mais recentes primeiro)."""
+def atualiza_projeto(
+    projeto_id: int,
+    tenant_id: int,
+    **campos,
+) -> bool:
+    """Atualiza campos do projeto. Retorna True se encontrado."""
+    campos = sanitiza_kwargs(campos)
     with get_session() as s:
-        stmt = (
-            select(Projeto)
-            .order_by(Projeto.atualizado_em.desc())
-            .limit(limit)
-        )
-        return list(s.execute(stmt).scalars().all())
+        p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
+        if not p:
+            return False
+        for k, v in campos.items():
+            if hasattr(p, k):
+                setattr(p, k, v)
+        return True
 
 
-def lista_revisoes_de(numero_projeto: str) -> list[Projeto]:
-    """Retorna todas as revisões de um número de projeto, ordenadas."""
+def deleta_projeto(projeto_id: int, tenant_id: int) -> bool:
+    """Deleta projeto (cascade para filhos). Retorna True se deletado."""
     with get_session() as s:
-        stmt = (
-            select(Projeto)
-            .where(Projeto.numero_projeto == numero_projeto)
-            .order_by(Projeto.revisao)
-        )
-        return list(s.execute(stmt).scalars().all())
+        p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
+        if not p:
+            return False
+        s.delete(p)
+        return True
 
 
-def deleta_projeto(projeto_id: int) -> None:
-    """Remove projeto e todos os filhos via CASCADE."""
-    with get_session() as s:
-        p = s.get(Projeto, projeto_id)
-        if p:
-            s.delete(p)
-
-
-# ============================================================
-# WENNER
-# ============================================================
+# ─── SOLO WENNER ─────────────────────────────────────────────────────────────
 
 def salva_medicoes_wenner(
     projeto_id: int,
-    medicoes: list[tuple[float, float]],
-) -> None:
-    """
-    Substitui todas as medições Wenner do projeto.
-
-    Args:
-        projeto_id: id do projeto
-        medicoes  : lista de (espacamento_m, resistencia_ohm)
-    """
-    import numpy as np
+    tenant_id: int,
+    medicoes: list[dict],
+) -> int:
+    """Substitui medições Wenner do projeto. Retorna quantidade salva."""
     with get_session() as s:
-        # Apaga existentes
-        s.query(SoloWenner).filter(SoloWenner.projeto_id == projeto_id).delete()
-        # Insere novas
-        for i, (esp, R) in enumerate(medicoes, start=1):
-            rho = float(2.0 * np.pi * esp * R)
+        # Verificar propriedade
+        p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
+        if not p:
+            raise PermissionError("Projeto não encontrado ou acesso negado.")
+
+        s.query(SoloWenner).filter_by(projeto_id=projeto_id).delete()
+        for i, m in enumerate(medicoes, start=1):
             s.add(SoloWenner(
                 projeto_id=projeto_id,
                 ponto=i,
-                espacamento_m=esp,
-                resistencia_ohm=R,
-                rho_aparente=rho,
+                espacamento_m=float(m["espacamento_m"]),
+                resistencia_ohm=float(m["resistencia_ohm"]),
+                rho_aparente=float(m.get("rho_aparente", 0)) or None,
             ))
+        return len(medicoes)
 
 
-# ============================================================
-# DADOS DE ENTRADA
-# ============================================================
+# ─── DADOS DE ENTRADA ────────────────────────────────────────────────────────
 
-def salva_dados_entrada(projeto_id: int, **campos) -> None:
-    """
-    Cria ou atualiza os dados de entrada do projeto.
-    Campos aceitos: largura_m, comprimento_m, profundidade_malha_m,
-    espac_malha_principal_m, espac_malha_juncao_m, brita_*, haste_*,
-    condutor_*, i_falta_3i0_ka, tempo_eliminacao_s, sf_div_corrente,
-    xr_ratio, df_decremento, peso_pessoa_kg.
-    """
+def salva_dados_entrada(
+    projeto_id: int,
+    tenant_id: int,
+    **campos,
+) -> None:
+    """Upsert de dados_entrada. Verifica propriedade do tenant."""
+    campos = sanitiza_kwargs(campos)
     with get_session() as s:
-        existente = s.query(DadosEntrada).filter_by(projeto_id=projeto_id).first()
-        if existente:
-            for k, v in campos.items():
-                if hasattr(existente, k):
-                    setattr(existente, k, v)
-        else:
-            s.add(DadosEntrada(projeto_id=projeto_id, **campos))
+        p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
+        if not p:
+            raise PermissionError("Projeto não encontrado ou acesso negado.")
+
+        de = s.query(DadosEntrada).filter_by(projeto_id=projeto_id).first()
+        if de is None:
+            de = DadosEntrada(projeto_id=projeto_id)
+            s.add(de)
+
+        for k, v in campos.items():
+            if hasattr(de, k):
+                setattr(de, k, v)
 
 
-# ============================================================
-# RESULTADOS
-# ============================================================
+# ─── RESULTADO ───────────────────────────────────────────────────────────────
 
-def salva_resultado(projeto_id: int, **campos) -> None:
-    """Cria ou atualiza o resultado do projeto."""
+def salva_resultado(
+    projeto_id: int,
+    tenant_id: int,
+    **campos,
+) -> None:
+    """Upsert de resultado. Verifica propriedade do tenant."""
+    campos = sanitiza_kwargs(campos)
     with get_session() as s:
-        existente = s.query(Resultado).filter_by(projeto_id=projeto_id).first()
-        if existente:
-            for k, v in campos.items():
-                if hasattr(existente, k):
-                    setattr(existente, k, v)
-        else:
-            s.add(Resultado(projeto_id=projeto_id, **campos))
+        p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
+        if not p:
+            raise PermissionError("Projeto não encontrado ou acesso negado.")
 
+        res = s.query(Resultado).filter_by(projeto_id=projeto_id).first()
+        if res is None:
+            res = Resultado(projeto_id=projeto_id)
+            s.add(res)
 
-# ============================================================
-# RELATÓRIOS
-# ============================================================
+        for k, v in campos.items():
+            if hasattr(res, k):
+                setattr(res, k, v)
+
 
 def registra_relatorio(
-    projeto_id: int, nome_arquivo: str, gerado_por: Optional[str] = None
-) -> int:
-    """Registra que um relatório .docx foi gerado."""
+    projeto_id: int,
+    tenant_id: int,
+    nome_arquivo: str,
+    gerado_por: Optional[str] = None,
+) -> None:
+    """Registra geração de relatório Word."""
     with get_session() as s:
-        r = RelatorioGerado(
+        p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
+        if not p:
+            raise PermissionError("Projeto não encontrado ou acesso negado.")
+        s.add(RelatorioGerado(
             projeto_id=projeto_id,
             nome_arquivo=nome_arquivo,
             gerado_por=gerado_por,
-        )
-        s.add(r)
-        s.flush()
-        return r.id
+        ))
 
 
-# ============================================================
-# UTILITÁRIOS
-# ============================================================
+# ─── TENANT / ADMIN ──────────────────────────────────────────────────────────
 
-def proximo_numero_revisao(numero_projeto: str) -> str:
-    """
-    Sugere a próxima revisão para um número de projeto.
-    Ex: se existem R00, R01, retorna 'R02'.
-    """
-    revs = lista_revisoes_de(numero_projeto)
-    if not revs:
-        return "00"
-    nums = []
-    for p in revs:
-        try:
-            nums.append(int(p.revisao))
-        except ValueError:
-            continue
-    return f"{max(nums) + 1:02d}" if nums else "00"
+def info_tenant(tenant_id: int) -> Optional[dict]:
+    """Retorna informações do tenant para exibição."""
+    with get_session() as s:
+        t = s.query(Tenant).filter_by(id=tenant_id).first()
+        if not t:
+            return None
+        n_projetos = s.query(Projeto).filter_by(tenant_id=tenant_id).count()
+        n_usuarios = s.query(Usuario).filter_by(tenant_id=tenant_id, ativo=True).count()
+        return {
+            "nome_empresa":  t.nome_empresa,
+            "plano":         t.plano,
+            "plano_label":   t.plano_label,
+            "max_projetos":  t.max_projetos,
+            "max_usuarios":  t.max_usuarios,
+            "n_projetos":    n_projetos,
+            "n_usuarios":    n_usuarios,
+            "trial_expira":  t.trial_expira_em,
+            "ativo":         t.ativo,
+        }
