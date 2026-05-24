@@ -1,7 +1,7 @@
 """
-data/repository.py — BK Malha de Terra v2 (Multi-Tenant)
+data/repository.py â BK Malha de Terra v2 (Multi-Tenant)
 =========================================================
-Todas as funções recebem tenant_id obrigatório.
+Todas as funÃ§Ãµes recebem tenant_id obrigatÃ³rio.
 Garante isolamento: nenhuma query retorna dados de outro tenant.
 """
 
@@ -21,7 +21,7 @@ from data.models import (
 from data.sanitizacao import sanitiza_kwargs, to_python
 
 
-# ─── PROJETOS ────────────────────────────────────────────────────────────────
+# âââ PROJETOS ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def cria_projeto(
     tenant_id: int,
@@ -45,7 +45,7 @@ def cria_projeto(
             if n >= tenant.max_projetos:
                 raise RuntimeError(
                     f"Limite de {tenant.max_projetos} projetos do plano "
-                    f"{tenant.plano} atingido. Faça upgrade para continuar."
+                    f"{tenant.plano} atingido. FaÃ§a upgrade para continuar."
                 )
 
         p = Projeto(
@@ -121,19 +121,19 @@ def deleta_projeto(projeto_id: int, tenant_id: int) -> bool:
         return True
 
 
-# ─── SOLO WENNER ─────────────────────────────────────────────────────────────
+# âââ SOLO WENNER âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def salva_medicoes_wenner(
     projeto_id: int,
     tenant_id: int,
     medicoes: list[dict],
 ) -> int:
-    """Substitui medições Wenner do projeto. Retorna quantidade salva."""
+    """Substitui mediÃ§Ãµes Wenner do projeto. Retorna quantidade salva."""
     with get_session() as s:
         # Verificar propriedade
         p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
         if not p:
-            raise PermissionError("Projeto não encontrado ou acesso negado.")
+            raise PermissionError("Projeto nÃ£o encontrado ou acesso negado.")
 
         s.query(SoloWenner).filter_by(projeto_id=projeto_id).delete()
         for i, m in enumerate(medicoes, start=1):
@@ -147,7 +147,7 @@ def salva_medicoes_wenner(
         return len(medicoes)
 
 
-# ─── DADOS DE ENTRADA ────────────────────────────────────────────────────────
+# âââ DADOS DE ENTRADA ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def salva_dados_entrada(
     projeto_id: int,
@@ -159,7 +159,7 @@ def salva_dados_entrada(
     with get_session() as s:
         p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
         if not p:
-            raise PermissionError("Projeto não encontrado ou acesso negado.")
+            raise PermissionError("Projeto nÃ£o encontrado ou acesso negado.")
 
         de = s.query(DadosEntrada).filter_by(projeto_id=projeto_id).first()
         if de is None:
@@ -171,7 +171,7 @@ def salva_dados_entrada(
                 setattr(de, k, v)
 
 
-# ─── RESULTADO ───────────────────────────────────────────────────────────────
+# âââ RESULTADO âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def salva_resultado(
     projeto_id: int,
@@ -183,7 +183,7 @@ def salva_resultado(
     with get_session() as s:
         p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
         if not p:
-            raise PermissionError("Projeto não encontrado ou acesso negado.")
+            raise PermissionError("Projeto nÃ£o encontrado ou acesso negado.")
 
         res = s.query(Resultado).filter_by(projeto_id=projeto_id).first()
         if res is None:
@@ -201,11 +201,11 @@ def registra_relatorio(
     nome_arquivo: str,
     gerado_por: Optional[str] = None,
 ) -> None:
-    """Registra geração de relatório Word."""
+    """Registra geraÃ§Ã£o de relatÃ³rio Word."""
     with get_session() as s:
         p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
         if not p:
-            raise PermissionError("Projeto não encontrado ou acesso negado.")
+            raise PermissionError("Projeto nÃ£o encontrado ou acesso negado.")
         s.add(RelatorioGerado(
             projeto_id=projeto_id,
             nome_arquivo=nome_arquivo,
@@ -213,10 +213,10 @@ def registra_relatorio(
         ))
 
 
-# ─── TENANT / ADMIN ──────────────────────────────────────────────────────────
+# âââ TENANT / ADMIN ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def info_tenant(tenant_id: int) -> Optional[dict]:
-    """Retorna informações do tenant para exibição."""
+    """Retorna informaÃ§Ãµes do tenant para exibiÃ§Ã£o."""
     with get_session() as s:
         t = s.query(Tenant).filter_by(id=tenant_id).first()
         if not t:
@@ -234,3 +234,24 @@ def info_tenant(tenant_id: int) -> Optional[dict]:
             "trial_expira":  t.trial_expira_em,
             "ativo":         t.ativo,
         }
+
+
+# --- RELATORIOS ---
+
+def lista_relatorios_de(projeto_id: int):
+    """Lista relatorios gerados para o projeto, do mais recente ao mais antigo."""
+    with get_session() as s:
+        rels = (
+            s.query(RelatorioGerado)
+            .filter_by(projeto_id=projeto_id)
+            .order_by(RelatorioGerado.gerado_em.desc())
+            .all()
+        )
+        return [
+            dict(
+                gerado_em=r.gerado_em,
+                nome_arquivo=r.nome_arquivo,
+                gerado_por=r.gerado_por,
+            )
+            for r in rels
+        ]
