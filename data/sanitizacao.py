@@ -2,13 +2,13 @@
 data/sanitizacao.py
 ===================
 
-Conversão de tipos NumPy/dataclasses para tipos Python nativos
-serializáveis em JSON e compatíveis com SQLAlchemy.
+ConversÃ£o de tipos NumPy/dataclasses para tipos Python nativos
+serializÃ¡veis em JSON e compatÃ­veis com SQLAlchemy.
 
-NumPy retorna tipos como np.float64, np.int64, np.bool_ que não são
-serializáveis pelo módulo json padrão e podem causar problemas em
-algumas drivers de banco. Esta função normaliza tudo recursivamente.
-"""h
+NumPy retorna tipos como np.float64, np.int64, np.bool_ que nÃ£o sÃ£o
+serializÃ¡veis pelo mÃ³dulo json padrÃ£o e podem causar problemas em
+algumas drivers de banco. Esta funÃ§Ã£o normaliza tudo recursivamente.
+"""
 
 from __future__ import annotations
 
@@ -27,13 +27,13 @@ def to_python(valor: Any) -> Any:
     Converte recursivamente um valor para tipos Python nativos.
 
     Trata:
-        - np.bool_ → bool
-        - np.integer → int
-        - np.floating → float
-        - np.ndarray → list (recursivo)
-        - dataclass → dict (recursivo)
-        - dict, list, tuple, set → recursivo
-        - None, str, int, float, bool → mantém
+        - np.bool_ â bool
+        - np.integer â int
+        - np.floating â float
+        - np.ndarray â list (recursivo)
+        - dataclass â dict (recursivo)
+        - dict, list, tuple, set â recursivo
+        - None, str, int, float, bool â mantÃ©m
 
     Args:
         valor: valor de qualquer tipo
@@ -41,9 +41,9 @@ def to_python(valor: Any) -> Any:
     Returns:
         Valor com tipos Python nativos.
     """
-    # Tipos Python nativos básicos
+    # Tipos Python nativos bÃ¡sicos
     if valor is None or isinstance(valor, (str, bool, int, float)):
-        # Cuidado: bool é subclasse de int, ordem importa
+        # Cuidado: bool Ã© subclasse de int, ordem importa
         return valor
 
     # NumPy
@@ -61,7 +61,7 @@ def to_python(valor: Any) -> Any:
     if is_dataclass(valor) and not isinstance(valor, type):
         return {k: to_python(v) for k, v in asdict(valor).items()}
 
-    # Coleções
+    # ColeÃ§Ãµes
     if isinstance(valor, dict):
         return {str(k): to_python(v) for k, v in valor.items()}
     if isinstance(valor, (list, tuple, set)):
@@ -75,7 +75,7 @@ def sanitiza_kwargs(kwargs: dict) -> dict:
     """
     Aplica `to_python` em todos os valores de um dict de kwargs.
 
-    Útil antes de chamar `repository.salva_resultado(**kwargs)` quando
-    os valores podem vir de cálculos com NumPy.
+    Ãtil antes de chamar `repository.salva_resultado(**kwargs)` quando
+    os valores podem vir de cÃ¡lculos com NumPy.
     """
     return {k: to_python(v) for k, v in kwargs.items()}
