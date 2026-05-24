@@ -2,16 +2,16 @@
 app.py
 ======
 
-BK Malha de Terra v2 — SaaS Multi-Tenant
+BK Malha de Terra v2 â SaaS Multi-Tenant
 Dimensionamento de malhas de aterramento IEEE 80 / NBR 15751
 
 Novidades v2:
-    - Autenticação (login/cadastro por empresa)
-    - Multi-tenancy: cada empresa vê apenas seus projetos
-    - Fator Cp de crescimento da corrente (P0 do relatório técnico)
-    - atende_condutor bloqueia aprovação (P0 do relatório técnico)
-    - Critério GPR correto na verificação final (P0)
-    - Página de administração de usuários
+    - AutenticaÃ§Ã£o (login/cadastro por empresa)
+    - Multi-tenancy: cada empresa vÃª apenas seus projetos
+    - Fator Cp de crescimento da corrente (P0 do relatÃ³rio tÃ©cnico)
+    - atende_condutor bloqueia aprovaÃ§Ã£o (P0 do relatÃ³rio tÃ©cnico)
+    - CritÃ©rio GPR correto na verificaÃ§Ã£o final (P0)
+    - PÃ¡gina de administraÃ§Ã£o de usuÃ¡rios
 
 Rodar:
     streamlit run app.py
@@ -58,39 +58,39 @@ from ui.visualizacoes import (
 
 
 # ============================================================
-# CONFIGURAÇÃO STREAMLIT
+# CONFIGURAÃÃO STREAMLIT
 # ============================================================
 
 st.set_page_config(
     page_title="BK Malha de Terra",
-    page_icon="⚡",
+    page_icon="â¡",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 
 # ============================================================
-# SIDEBAR - SELEÇÃO/CRIAÇÃO DE PROJETO
+# SIDEBAR - SELEÃÃO/CRIAÃÃO DE PROJETO
 # ============================================================
 
 def sidebar_projetos():
-    st.sidebar.title("⚡ BK Malha de Terra")
-    st.sidebar.caption("IEEE 80-2013 · NBR 15751 · NBR 7117")
+    st.sidebar.title("â¡ BK Malha de Terra")
+    st.sidebar.caption("IEEE 80-2013 Â· NBR 15751 Â· NBR 7117")
 
     # Healthcheck do banco
-    with st.sidebar.expander("🔌 Banco de dados", expanded=False):
-        if st.button("Testar conexão"):
+    with st.sidebar.expander("ð Banco de dados", expanded=False):
+        if st.button("Testar conexÃ£o"):
             r = testa_conexao()
             if r["status"] == "ok":
-                emoji = "🗃️" if r["backend"] == "SQLite" else "🐘"
-                st.success(f"{emoji} {r['backend']} · {r['tabelas_existentes']} tabelas")
+                emoji = "ðï¸" if r["backend"] == "SQLite" else "ð"
+                st.success(f"{emoji} {r['backend']} Â· {r['tabelas_existentes']} tabelas")
                 st.caption(r["versao"][:80])
             else:
                 st.error(f"Erro: {r.get('erro', '?')}")
 
     st.sidebar.divider()
 
-    # ── Info do usuário e empresa ────────────────────────────────────────────
+    # ââ Info do usuÃ¡rio e empresa ââââââââââââââââââââââââââââââââââââââââââââ
     render_sidebar_usuario()
 
     st.sidebar.divider()
@@ -101,24 +101,24 @@ def sidebar_projetos():
     try:
         projetos = repo.lista_projetos(tenant_id=tid, limit=50) if tid else []
     except Exception as e:
-        st.sidebar.error(f"Banco indisponível: {e}")
+        st.sidebar.error(f"Banco indisponÃ­vel: {e}")
         projetos = []
 
-    opcoes = ["➕ Novo projeto..."] + [
-        f"#{p.id} · {p.numero_projeto} R{p.revisao} · {p.cliente[:30]}"
+    opcoes = ["â Novo projeto..."] + [
+        f"#{p.id} Â· {p.numero_projeto} R{p.revisao} Â· {p.cliente[:30]}"
         for p in projetos
     ]
     escolha = st.sidebar.selectbox("Selecionar", opcoes, key="select_projeto")
 
-    if escolha == "➕ Novo projeto...":
+    if escolha == "â Novo projeto...":
         st.session_state["projeto_id"] = None
     else:
         idx = opcoes.index(escolha) - 1
         st.session_state["projeto_id"] = projetos[idx].id
 
     if st.session_state.get("projeto_id"):
-        if st.sidebar.button("🗑️ Excluir projeto", type="secondary"):
-            repo.deleta_projeto(st.session_state["projeto_id"])
+        if st.sidebar.button("ðï¸ Excluir projeto", type="secondary"):
+            repo.deleta_projeto(st.session_state["projeto_id"], tenant_id=tenant_id_atual())
             st.session_state["projeto_id"] = None
             st.rerun()
 
@@ -128,7 +128,7 @@ def sidebar_projetos():
 # ============================================================
 
 def aba_projeto():
-    st.header("1. Identificação do Projeto")
+    st.header("1. IdentificaÃ§Ã£o do Projeto")
 
     pid = st.session_state.get("projeto_id")
     p = repo.busca_projeto(pid, tenant_id=tenant_id_atual()) if pid else None
@@ -142,38 +142,38 @@ def aba_projeto():
             "Nome do projeto *", value=(p.nome_projeto if p else ""), max_chars=300
         )
         numero = st.text_input(
-            "Número do projeto *", value=(p.numero_projeto if p else ""), max_chars=50
+            "NÃºmero do projeto *", value=(p.numero_projeto if p else ""), max_chars=50
         )
         revisao = st.text_input(
-            "Revisão", value=(p.revisao if p else "00"), max_chars=10
+            "RevisÃ£o", value=(p.revisao if p else "00"), max_chars=10
         )
     with col2:
         responsavel = st.text_input(
-            "Responsável técnico", value=(p.responsavel_tecnico or "" if p else ""),
+            "ResponsÃ¡vel tÃ©cnico", value=(p.responsavel_tecnico or "" if p else ""),
         )
         crea = st.text_input(
-            "CREA do responsável", value=(p.crea_responsavel or "" if p else ""),
+            "CREA do responsÃ¡vel", value=(p.crea_responsavel or "" if p else ""),
         )
         concessionaria = st.selectbox(
-            "Concessionária",
+            "ConcessionÃ¡ria",
             options=["", "Celesc", "Energisa", "Copel", "CPFL", "Enel",
                      "Neoenergia", "Equatorial", "Outra"],
             index=0,
         )
         data_calc = st.date_input(
-            "Data do cálculo", value=(p.data_calculo if p else date.today())
+            "Data do cÃ¡lculo", value=(p.data_calculo if p else date.today())
         )
 
-    obs = st.text_area("Observações", value=(p.observacoes or "" if p else ""))
+    obs = st.text_area("ObservaÃ§Ãµes", value=(p.observacoes or "" if p else ""))
 
-    if st.button("💾 Salvar identificação", type="primary"):
+    if st.button("ð¾ Salvar identificaÃ§Ã£o", type="primary"):
         if not (cliente and nome and numero):
-            st.error("Cliente, nome e número são obrigatórios.")
+            st.error("Cliente, nome e nÃºmero sÃ£o obrigatÃ³rios.")
             return
         try:
             if pid:
-                # Atualiza (criamos via cria_projeto pq não temos update direto)
-                # Para v1 - simplificação: deletar e recriar mantendo id é complicado.
+                # Atualiza (criamos via cria_projeto pq nÃ£o temos update direto)
+                # Para v1 - simplificaÃ§Ã£o: deletar e recriar mantendo id Ã© complicado.
                 # Vamos atualizar via SQL direto:
                 from data.db import get_session
                 from data.models import Projeto
@@ -210,32 +210,32 @@ def aba_projeto():
 # ============================================================
 
 def aba_solo():
-    st.header("2. Solo - Método de Wenner (NBR 7117)")
+    st.header("2. Solo - MÃ©todo de Wenner (NBR 7117)")
 
     if not st.session_state.get("projeto_id"):
-        st.warning("Salve a identificação do projeto primeiro (aba 1).")
+        st.warning("Salve a identificaÃ§Ã£o do projeto primeiro (aba 1).")
         return
 
     pid = st.session_state["projeto_id"]
     p = repo.busca_projeto(pid, tenant_id=tenant_id_atual())
 
     st.markdown("""
-    Insira pelo menos **4 medições** com espaçamentos crescentes (recomendado:
-    1, 2, 4, 8, 16, 32 m). O app calcula ρ aparente e ajusta um modelo de
-    **2 camadas** por otimização (Sunde).
+    Insira pelo menos **4 mediÃ§Ãµes** com espaÃ§amentos crescentes (recomendado:
+    1, 2, 4, 8, 16, 32 m). O app calcula Ï aparente e ajusta um modelo de
+    **2 camadas** por otimizaÃ§Ã£o (Sunde).
     """)
 
-    # Carrega medições existentes ou template
+    # Carrega mediÃ§Ãµes existentes ou template
     if p and p.medicoes_wenner:
         df_inicial = pd.DataFrame([
-            {"Espaçamento a [m]": float(m.espacamento_m),
-             "Resistência R [Ω]": float(m.resistencia_ohm)}
+            {"EspaÃ§amento a [m]": float(m.espacamento_m),
+             "ResistÃªncia R [Î©]": float(m.resistencia_ohm)}
             for m in p.medicoes_wenner
         ])
     else:
         df_inicial = pd.DataFrame({
-            "Espaçamento a [m]":  [1.0, 2.0, 4.0, 8.0, 16.0, 32.0],
-            "Resistência R [Ω]":  [50.0, 25.0, 12.0, 6.0, 3.0, 1.5],
+            "EspaÃ§amento a [m]":  [1.0, 2.0, 4.0, 8.0, 16.0, 32.0],
+            "ResistÃªncia R [Î©]":  [50.0, 25.0, 12.0, 6.0, 3.0, 1.5],
         })
 
     df_edit = st.data_editor(
@@ -243,10 +243,10 @@ def aba_solo():
         num_rows="dynamic",
         use_container_width=True,
         column_config={
-            "Espaçamento a [m]": st.column_config.NumberColumn(
+            "EspaÃ§amento a [m]": st.column_config.NumberColumn(
                 format="%.2f", min_value=0.1, max_value=200.0
             ),
-            "Resistência R [Ω]": st.column_config.NumberColumn(
+            "ResistÃªncia R [Î©]": st.column_config.NumberColumn(
                 format="%.4f", min_value=0.001
             ),
         },
@@ -255,18 +255,18 @@ def aba_solo():
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🧮 Calcular estratificação", type="primary"):
+        if st.button("ð§® Calcular estratificaÃ§Ã£o", type="primary"):
             try:
                 medicoes = [
                     MedicaoWenner(
-                        espacamento_m=float(row["Espaçamento a [m]"]),
-                        resistencia_ohm=float(row["Resistência R [Ω]"]),
+                        espacamento_m=float(row["EspaÃ§amento a [m]"]),
+                        resistencia_ohm=float(row["ResistÃªncia R [Î©]"]),
                     )
                     for _, row in df_edit.iterrows()
-                    if row["Espaçamento a [m]"] > 0 and row["Resistência R [Ω]"] > 0
+                    if row["EspaÃ§amento a [m]"] > 0 and row["ResistÃªncia R [Î©]"] > 0
                 ]
                 if len(medicoes) < 3:
-                    st.error("Insira pelo menos 3 medições válidas.")
+                    st.error("Insira pelo menos 3 mediÃ§Ãµes vÃ¡lidas.")
                     return
 
                 solo = estratifica_2_camadas(medicoes)
@@ -281,7 +281,7 @@ def aba_solo():
                                for m in medicoes],
                 )
 
-                st.success("Estratificação calculada e salva.")
+                st.success("EstratificaÃ§Ã£o calculada e salva.")
             except Exception as e:
                 st.error(f"Erro: {e}")
 
@@ -290,17 +290,17 @@ def aba_solo():
     medicoes = st.session_state.get("medicoes")
     if solo and medicoes:
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("ρ₁", f"{solo.rho1:.0f} Ω·m")
-        c2.metric("ρ₂", f"{solo.rho2:.0f} Ω·m")
-        c3.metric("h₁", f"{solo.h1:.2f} m")
+        c1.metric("Ïâ", f"{solo.rho1:.0f} Î©Â·m")
+        c2.metric("Ïâ", f"{solo.rho2:.0f} Î©Â·m")
+        c3.metric("hâ", f"{solo.h1:.2f} m")
         c4.metric("Erro RMS", f"{solo.erro_rms:.2f}%")
 
         st.plotly_chart(plot_curva_wenner(medicoes, solo), use_container_width=True)
 
         if solo.erro_rms > 15:
             st.warning(
-                f"Erro RMS de {solo.erro_rms:.1f}% é alto. Considere refazer "
-                "as medições (várias direções, mesmo nível d'água) ou usar "
+                f"Erro RMS de {solo.erro_rms:.1f}% Ã© alto. Considere refazer "
+                "as mediÃ§Ãµes (vÃ¡rias direÃ§Ãµes, mesmo nÃ­vel d'Ã¡gua) ou usar "
                 "modelo de 3+ camadas em software dedicado."
             )
 
@@ -313,14 +313,14 @@ def aba_geometria():
     st.header("3. Geometria, Brita e Hastes")
 
     if not st.session_state.get("projeto_id"):
-        st.warning("Salve a identificação primeiro.")
+        st.warning("Salve a identificaÃ§Ã£o primeiro.")
         return
 
     pid = st.session_state["projeto_id"]
     p = repo.busca_projeto(pid, tenant_id=tenant_id_atual())
     de = p.dados_entrada if p else None
 
-    st.subheader("Dimensões da SE")
+    st.subheader("DimensÃµes da SE")
     col1, col2, col3 = st.columns(3)
     largura = col1.number_input(
         "Largura W [m]",
@@ -340,12 +340,12 @@ def aba_geometria():
 
     col1, col2 = st.columns(2)
     espac_principal = col1.number_input(
-        "Espaçamento da malha principal D [m]",
+        "EspaÃ§amento da malha principal D [m]",
         min_value=1.0, max_value=20.0,
         value=float(de.espac_malha_principal_m) if de else 5.0, step=0.5,
     )
     espac_juncao = col2.number_input(
-        "Espaçamento da malha de junção (bordas) [m]",
+        "EspaÃ§amento da malha de junÃ§Ã£o (bordas) [m]",
         min_value=0.5, max_value=20.0,
         value=float(de.espac_malha_juncao_m or 2.5) if de else 2.5, step=0.5,
         help="Malha mais densa nas bordas reduz Em nos cantos. Recomendado D/2.",
@@ -357,16 +357,16 @@ def aba_geometria():
         "Espessura da brita [m]",
         min_value=0.0, max_value=0.30,
         value=float(de.brita_espessura_m) if de else 0.10, step=0.01,
-        help="0.10m é o mínimo recomendado pela IEEE 80 §11.3",
+        help="0.10m Ã© o mÃ­nimo recomendado pela IEEE 80 Â§11.3",
     )
     brita_rho = col2.selectbox(
-        "Resistividade da brita [Ω·m]",
+        "Resistividade da brita [Î©Â·m]",
         options=[1200, 2500, 3000, 5000, 10000],
         index=2,  # 3000
         format_func=lambda v: {
             1200: "1200 (brita molhada)",
-            2500: "2500 (brita média)",
-            3000: "3000 (brita seca - padrão IEEE 80)",
+            2500: "2500 (brita mÃ©dia)",
+            3000: "3000 (brita seca - padrÃ£o IEEE 80)",
             5000: "5000 (brita lavada)",
             10000: "10000 (asfalto)",
         }[v],
@@ -380,30 +380,30 @@ def aba_geometria():
                  "copperweld_30", "aluminio_5005", "aco_galvanizado"],
         index=0,
         format_func=lambda v: {
-            "cobre_nu": "Cobre nu (100% IACS) - padrão",
+            "cobre_nu": "Cobre nu (100% IACS) - padrÃ£o",
             "cobre_comercial": "Cobre comercial (97% IACS)",
             "copperweld_40": "Copperweld 40% IACS",
             "copperweld_30": "Copperweld 30% IACS",
-            "aluminio_5005": "Alumínio liga 5005",
-            "aco_galvanizado": "Aço galvanizado",
+            "aluminio_5005": "AlumÃ­nio liga 5005",
+            "aco_galvanizado": "AÃ§o galvanizado",
         }[v],
-        help="Cobre nu é o mais comum em SE no Brasil",
+        help="Cobre nu Ã© o mais comum em SE no Brasil",
     )
     bitolas_disponiveis = [16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300]
     bitola_default_idx = (
         bitolas_disponiveis.index(int(float(de.condutor_bitola_mm2)))
         if (de and de.condutor_bitola_mm2
             and int(float(de.condutor_bitola_mm2)) in bitolas_disponiveis)
-        else 3  # 50 mm² (mínimo prático BK)
+        else 3  # 50 mmÂ² (mÃ­nimo prÃ¡tico BK)
     )
     bitola_cabo = col2.selectbox(
-        "Bitola do cabo [mm²]",
+        "Bitola do cabo [mmÂ²]",
         options=bitolas_disponiveis,
         index=bitola_default_idx,
-        format_func=lambda v: f"{v} mm²" + (" (mín. BK)" if v == 50 else ""),
-        help="Bitola que será adotada. O app verifica se atende Sverak "
-             "no cálculo. Se a calculada exceder a escolhida, aparecerá "
-             "alerta para você revisar.",
+        format_func=lambda v: f"{v} mmÂ²" + (" (mÃ­n. BK)" if v == 50 else ""),
+        help="Bitola que serÃ¡ adotada. O app verifica se atende Sverak "
+             "no cÃ¡lculo. Se a calculada exceder a escolhida, aparecerÃ¡ "
+             "alerta para vocÃª revisar.",
     )
 
     st.subheader("Hastes copperweld")
@@ -414,18 +414,18 @@ def aba_geometria():
         value=float(de.haste_comprimento_m) if de else 3.0, step=0.5,
     )
     haste_d_opt = col2.selectbox(
-        "Diâmetro da haste",
+        "DiÃ¢metro da haste",
         options=[12.7, 14.3, 15.875, 19.05],
         index=2,  # 5/8"
         format_func=lambda v: {
             12.7: '1/2" (12.7 mm)',
             14.3: '9/16" (14.3 mm)',
-            15.875: '5/8" (15.875 mm) - padrão',
+            15.875: '5/8" (15.875 mm) - padrÃ£o',
             19.05: '3/4" (19.05 mm)',
         }[v],
     )
 
-    if st.button("💾 Salvar geometria", type="primary"):
+    if st.button("ð¾ Salvar geometria", type="primary"):
         try:
             campos_existentes_outros = {}
             if de:
@@ -437,7 +437,7 @@ def aba_geometria():
                     "peso_pessoa_kg": int(de.peso_pessoa_kg),
                 }
             else:
-                # placeholders - serão preenchidos na aba curto
+                # placeholders - serÃ£o preenchidos na aba curto
                 campos_existentes_outros = {
                     "i_falta_3i0_ka": 5.0,
                     "tempo_eliminacao_s": 0.5,
@@ -465,16 +465,16 @@ def aba_geometria():
         except Exception as e:
             st.error(f"Erro: {e}")
 
-    # Pré-visualização da malha
-    st.subheader("Pré-visualização")
+    # PrÃ©-visualizaÃ§Ã£o da malha
+    st.subheader("PrÃ©-visualizaÃ§Ã£o")
     cabos, n_h, n_v = gera_cabos_malha(
         largura, comprimento, espac_principal, espac_juncao
     )
     fig = plot_planta_malha(largura, comprimento, cabos, hastes=[],
-                              titulo=f"Pré-visualização ({n_h}×{n_v} cabos)")
+                              titulo=f"PrÃ©-visualizaÃ§Ã£o ({n_h}Ã{n_v} cabos)")
     st.plotly_chart(fig, use_container_width=True)
     st.caption(
-        f"Cabos paralelos a L: {n_h} · Cabos paralelos a W: {n_v} · "
+        f"Cabos paralelos a L: {n_h} Â· Cabos paralelos a W: {n_v} Â· "
         f"Comprimento total estimado: {sum(np.hypot(c[2]-c[0], c[3]-c[1]) for c in cabos):.0f} m"
     )
 
@@ -484,10 +484,10 @@ def aba_geometria():
 # ============================================================
 
 def aba_curto():
-    st.header("4. Dados Elétricos do Curto-Circuito")
+    st.header("4. Dados ElÃ©tricos do Curto-Circuito")
 
     if not st.session_state.get("projeto_id"):
-        st.warning("Salve a identificação primeiro.")
+        st.warning("Salve a identificaÃ§Ã£o primeiro.")
         return
 
     pid = st.session_state["projeto_id"]
@@ -495,32 +495,32 @@ def aba_curto():
     de = p.dados_entrada if p else None
 
     st.markdown("""
-    Dados do estudo de curto-circuito (extrair do estudo elétrico). Para SE
-    de distribuição típica, use a corrente fase-terra no barramento de AT.
+    Dados do estudo de curto-circuito (extrair do estudo elÃ©trico). Para SE
+    de distribuiÃ§Ã£o tÃ­pica, use a corrente fase-terra no barramento de AT.
     """)
 
     col1, col2 = st.columns(2)
     i_falta = col1.number_input(
-        "Corrente simétrica de falta 3I₀ [kA]",
+        "Corrente simÃ©trica de falta 3Iâ [kA]",
         min_value=0.5, max_value=80.0,
         value=float(de.i_falta_3i0_ka) if de else 8.0, step=0.5,
     )
     tempo = col2.number_input(
-        "Tempo de eliminação tc [s]",
+        "Tempo de eliminaÃ§Ã£o tc [s]",
         min_value=0.05, max_value=3.0,
         value=float(de.tempo_eliminacao_s) if de else 0.5, step=0.05,
-        help="Proteção primária + tempo de abertura do disjuntor",
+        help="ProteÃ§Ã£o primÃ¡ria + tempo de abertura do disjuntor",
     )
 
     col1, col2 = st.columns(2)
     sf = col1.slider(
-        "Fator de divisão Sf",
+        "Fator de divisÃ£o Sf",
         min_value=0.05, max_value=1.0,
         value=float(de.sf_div_corrente) if de else 0.6, step=0.05,
         help="Tabela 10 IEEE 80. SE com cabo guarda + neutro: 0.4-0.6. Isolada: 1.0.",
     )
     xr = col2.number_input(
-        "Relação X/R no ponto de falta",
+        "RelaÃ§Ã£o X/R no ponto de falta",
         min_value=0.5, max_value=80.0,
         value=float(de.xr_ratio) if de and de.xr_ratio else 10.0, step=1.0,
     )
@@ -530,25 +530,25 @@ def aba_curto():
         options=[50, 70],
         index=0 if (not de or de.peso_pessoa_kg == 50) else 1,
         horizontal=True,
-        help="50kg é mais conservador, padrão das concessionárias BR.",
+        help="50kg Ã© mais conservador, padrÃ£o das concessionÃ¡rias BR.",
     )
 
-    # ── Fator Cp (P0 do relatório técnico) ──────────────────────────────────
+    # ââ Fator Cp (P0 do relatÃ³rio tÃ©cnico) ââââââââââââââââââââââââââââââââââ
     st.markdown("---")
     st.subheader("Fator de crescimento da corrente (Cp)")
     st.caption(
-        "IEEE 80 §15 recomenda usar a máxima corrente futura do sistema. "
-        "Cp é um fator de projeto — não é parâmetro direto da norma, mas boa prática para sistemas em expansão."
+        "IEEE 80 Â§15 recomenda usar a mÃ¡xima corrente futura do sistema. "
+        "Cp Ã© um fator de projeto â nÃ£o Ã© parÃ¢metro direto da norma, mas boa prÃ¡tica para sistemas em expansÃ£o."
     )
     cp_opcoes = {
-        "1,00 — Sistema atual, sem expansão prevista": 1.00,
-        "1,10 — Expansão moderada (~10%)": 1.10,
-        "1,20 — Expansão relevante (~20%) — conservador": 1.20,
-        "1,30 — Estudo muito conservador": 1.30,
+        "1,00 â Sistema atual, sem expansÃ£o prevista": 1.00,
+        "1,10 â ExpansÃ£o moderada (~10%)": 1.10,
+        "1,20 â ExpansÃ£o relevante (~20%) â conservador": 1.20,
+        "1,30 â Estudo muito conservador": 1.30,
         "Personalizado": None,
     }
     cp_sel = st.selectbox(
-        "Cp — Fator de crescimento",
+        "Cp â Fator de crescimento",
         list(cp_opcoes.keys()),
         index=0 if not de else (
             0 if float(de.cp_crescimento or 1.0) == 1.00 else
@@ -566,14 +566,14 @@ def aba_curto():
 
     if cp_val > 1.0:
         st.info(
-            f"IG será multiplicado por Cp = {cp_val:.2f}. "
-            f"Ex.: se 3I₀ = {i_falta:.1f} kA → IG = Df × Sf × {cp_val:.2f} × 3I₀ "
-            f"≈ {i_falta * cp_val:.2f} kA (estimativa sem Df/Sf)."
+            f"IG serÃ¡ multiplicado por Cp = {cp_val:.2f}. "
+            f"Ex.: se 3Iâ = {i_falta:.1f} kA â IG = Df Ã Sf Ã {cp_val:.2f} Ã 3Iâ "
+            f"â {i_falta * cp_val:.2f} kA (estimativa sem Df/Sf)."
         )
 
-    if st.button("💾 Salvar dados elétricos", type="primary"):
+    if st.button("ð¾ Salvar dados elÃ©tricos", type="primary"):
         try:
-            # mantém geometria existente
+            # mantÃ©m geometria existente
             campos_geom = {}
             if de:
                 campos_geom = {
@@ -601,38 +601,38 @@ def aba_curto():
                 cp_crescimento=cp_val,
                 **campos_geom,
             )
-            st.success("Dados elétricos salvos.")
+            st.success("Dados elÃ©tricos salvos.")
         except Exception as e:
             st.error(f"Erro: {e}")
 
 
 # ============================================================
-# ABA 5 - CÁLCULO E RESULTADOS
+# ABA 5 - CÃLCULO E RESULTADOS
 # ============================================================
 
 def aba_calculo():
-    st.header("5. Cálculo IEEE 80 e Resultados")
+    st.header("5. CÃ¡lculo IEEE 80 e Resultados")
 
     if not st.session_state.get("projeto_id"):
-        st.warning("Salve a identificação primeiro.")
+        st.warning("Salve a identificaÃ§Ã£o primeiro.")
         return
 
     pid = st.session_state["projeto_id"]
     p = repo.busca_projeto(pid, tenant_id=tenant_id_atual())
 
     if not p or not p.dados_entrada or not p.medicoes_wenner:
-        st.warning("Preencha solo (aba 2), geometria (aba 3) e dados elétricos (aba 4).")
+        st.warning("Preencha solo (aba 2), geometria (aba 3) e dados elÃ©tricos (aba 4).")
         return
 
     de = p.dados_entrada
 
-    st.subheader("Pipeline de cálculo")
+    st.subheader("Pipeline de cÃ¡lculo")
     st.caption(
-        "Solo (Sunde) → IG (eq.70) → Condutor (eq.37) → "
-        "Eadm (eqs.30-33) → Rg (Sverak/Schwarz) → Em/Es → Verificação"
+        "Solo (Sunde) â IG (eq.70) â Condutor (eq.37) â "
+        "Eadm (eqs.30-33) â Rg (Sverak/Schwarz) â Em/Es â VerificaÃ§Ã£o"
     )
 
-    if st.button("⚡ Executar cálculo", type="primary"):
+    if st.button("â¡ Executar cÃ¡lculo", type="primary"):
         with st.spinner("Calculando..."):
             try:
                 # 1. Solo
@@ -649,7 +649,7 @@ def aba_calculo():
                     comprimento_haste=float(de.haste_comprimento_m),
                 )
 
-                # 2. Corrente — com fator Cp (P0 do relatório técnico BK)
+                # 2. Corrente â com fator Cp (P0 do relatÃ³rio tÃ©cnico BK)
                 corrente = corrente_malha_ig(
                     i_falta_3i0_a=float(de.i_falta_3i0_ka) * 1000.0,
                     sf_div_corrente=float(de.sf_div_corrente),
@@ -658,8 +658,8 @@ def aba_calculo():
                     cp_crescimento=float(de.cp_crescimento or 1.0),
                 )
 
-                # 3. Condutor — bitola mínima térmica; usuário pode sobrescrever
-                # P0: se bitola adotada < calculada, a aprovação será BLOQUEADA
+                # 3. Condutor â bitola mÃ­nima tÃ©rmica; usuÃ¡rio pode sobrescrever
+                # P0: se bitola adotada < calculada, a aprovaÃ§Ã£o serÃ¡ BLOQUEADA
                 cond = dimensiona_condutor(
                     corrente_a=corrente.ig_a,
                     tempo_s=float(de.tempo_eliminacao_s),
@@ -672,12 +672,12 @@ def aba_calculo():
                 atende_condutor = bitola_usuario >= cond.bitola_calculada_mm2
                 if not atende_condutor:
                     cond.observacoes.append(
-                        f"❌ CONDUTOR REPROVADO: bitola adotada {bitola_usuario:.0f} mm² "
-                        f"< mínimo calculado {cond.bitola_calculada_mm2:.0f} mm². "
-                        "A aprovação do projeto será BLOQUEADA até a bitola ser corrigida."
+                        f"â CONDUTOR REPROVADO: bitola adotada {bitola_usuario:.0f} mmÂ² "
+                        f"< mÃ­nimo calculado {cond.bitola_calculada_mm2:.0f} mmÂ². "
+                        "A aprovaÃ§Ã£o do projeto serÃ¡ BLOQUEADA atÃ© a bitola ser corrigida."
                     )
 
-                # 4. Tensões admissíveis
+                # 4. TensÃµes admissÃ­veis
                 tensoes_adm = calcula_tensoes_admissiveis(
                     rho_solo=solo.rho1,
                     rho_brita=float(de.brita_resistividade_ohm),
@@ -686,7 +686,7 @@ def aba_calculo():
                     peso_kg=int(de.peso_pessoa_kg),
                 )
 
-                # 5. Geometria + iteração
+                # 5. Geometria + iteraÃ§Ã£o
                 geom_ini = GeometriaMalha(
                     largura_m=float(de.largura_m),
                     comprimento_m=float(de.comprimento_m),
@@ -718,7 +718,7 @@ def aba_calculo():
                     haste_comprimento=float(de.haste_comprimento_m),
                 )
 
-                # Cabos para visualização
+                # Cabos para visualizaÃ§Ã£o
                 cabos, _, _ = gera_cabos_malha(
                     float(de.largura_m), float(de.comprimento_m),
                     float(de.espac_malha_principal_m),
@@ -765,7 +765,7 @@ def aba_calculo():
                     },
                 )
 
-                # Guarda em sessão para mostrar
+                # Guarda em sessÃ£o para mostrar
                 st.session_state["calc"] = {
                     "solo": solo, "rho_eq": rho_eq,
                     "corrente": corrente, "cond": cond,
@@ -774,9 +774,9 @@ def aba_calculo():
                     "hastes": hastes, "cabos": cabos,
                     "geom_final": iteracao.geometria_final,
                 }
-                st.success("Cálculo executado e salvo.")
+                st.success("CÃ¡lculo executado e salvo.")
             except Exception as e:
-                st.error(f"Erro no cálculo: {e}")
+                st.error(f"Erro no cÃ¡lculo: {e}")
                 import traceback
                 st.code(traceback.format_exc())
 
@@ -791,50 +791,50 @@ def aba_calculo():
     tensoes_adm = calc["tensoes_adm"]
 
     st.divider()
-    st.subheader("📊 Resultado final")
+    st.subheader("ð Resultado final")
 
     # Status grande
     if verif.atende_geral:
-        st.success("✅ MALHA ATENDE OS CRITÉRIOS DA IEEE 80-2013")
+        st.success("â MALHA ATENDE OS CRITÃRIOS DA IEEE 80-2013")
     else:
-        st.error("❌ MALHA NÃO ATENDE - revisar projeto")
+        st.error("â MALHA NÃO ATENDE - revisar projeto")
 
-    # Métricas principais
+    # MÃ©tricas principais
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Rg", f"{res.rg_adotado_ohm:.2f} Ω",
+    c1.metric("Rg", f"{res.rg_adotado_ohm:.2f} Î©",
                help="Schwarz (mais preciso que Sverak)")
     c2.metric("GPR", f"{res.gpr_v:.0f} V")
-    c3.metric("Nº de hastes", f"{calc['geom_final'].num_hastes}")
-    c4.metric("Iterações", f"{iteracao.iteracoes}")
+    c3.metric("NÂº de hastes", f"{calc['geom_final'].num_hastes}")
+    c4.metric("IteraÃ§Ãµes", f"{iteracao.iteracoes}")
 
     c1, c2 = st.columns(2)
     c1.metric(
         "Em (toque)",
         f"{res.em_v:.0f} V",
-        f"adm {tensoes_adm.etoque_v:.0f} V · margem {verif.margem_toque_pct:+.1f}%",
+        f"adm {tensoes_adm.etoque_v:.0f} V Â· margem {verif.margem_toque_pct:+.1f}%",
         delta_color=("normal" if verif.atende_toque else "inverse"),
     )
     c2.metric(
         "Es (passo)",
         f"{res.es_v:.0f} V",
-        f"adm {tensoes_adm.epasso_v:.0f} V · margem {verif.margem_passo_pct:+.1f}%",
+        f"adm {tensoes_adm.epasso_v:.0f} V Â· margem {verif.margem_passo_pct:+.1f}%",
         delta_color=("normal" if verif.atende_passo else "inverse"),
     )
 
-    # Observações
+    # ObservaÃ§Ãµes
     obs_all = (calc["corrente"].observacoes + calc["cond"].observacoes +
                tensoes_adm.observacoes + verif.observacoes)
     if obs_all:
-        with st.expander("⚠️ Observações técnicas"):
+        with st.expander("â ï¸ ObservaÃ§Ãµes tÃ©cnicas"):
             for o in obs_all:
                 st.markdown(f"- {o}")
 
-    # Análise de sensibilidade quando NÃO atende
+    # AnÃ¡lise de sensibilidade quando NÃO atende
     if not verif.atende_geral:
-        with st.expander("🔧 Análise de sensibilidade — o que faria atender?",
+        with st.expander("ð§ AnÃ¡lise de sensibilidade â o que faria atender?",
                           expanded=True):
             st.caption(
-                "Cálculos hipotéticos variando UM parâmetro de cada vez "
+                "CÃ¡lculos hipotÃ©ticos variando UM parÃ¢metro de cada vez "
                 "para identificar a alavanca mais eficaz."
             )
             de_atual = repo.busca_projeto(pid, tenant_id=tenant_id_atual()).dados_entrada
@@ -843,7 +843,7 @@ def aba_calculo():
 
             cenarios = []
 
-            # 1. Reduzir tempo de eliminação
+            # 1. Reduzir tempo de eliminaÃ§Ã£o
             for tc_novo in [0.3, 0.2, 0.1]:
                 if tc_novo < float(de_atual.tempo_eliminacao_s):
                     tens_novo = calcula_tensoes_admissiveis(
@@ -859,10 +859,10 @@ def aba_calculo():
                     atende = (res_novo.em_v <= tens_novo.etoque_v
                               and res_novo.es_v <= tens_novo.epasso_v)
                     cenarios.append({
-                        "Mudança": f"tc: {de_atual.tempo_eliminacao_s}s → {tc_novo}s",
+                        "MudanÃ§a": f"tc: {de_atual.tempo_eliminacao_s}s â {tc_novo}s",
                         "Em [V]": f"{res_novo.em_v:.0f}",
                         "Etoque adm [V]": f"{tens_novo.etoque_v:.0f}",
-                        "Atende?": "✓" if atende else "✗",
+                        "Atende?": "â" if atende else "â",
                     })
 
             # 2. Aumentar brita
@@ -881,10 +881,10 @@ def aba_calculo():
                     atende = (res_novo.em_v <= tens_novo.etoque_v
                               and res_novo.es_v <= tens_novo.epasso_v)
                     cenarios.append({
-                        "Mudança": f"brita: {de_atual.brita_espessura_m}m → {h_brita_nova}m",
+                        "MudanÃ§a": f"brita: {de_atual.brita_espessura_m}m â {h_brita_nova}m",
                         "Em [V]": f"{res_novo.em_v:.0f}",
                         "Etoque adm [V]": f"{tens_novo.etoque_v:.0f}",
-                        "Atende?": "✓" if atende else "✗",
+                        "Atende?": "â" if atende else "â",
                     })
 
             # 3. Hastes mais profundas
@@ -911,14 +911,14 @@ def aba_calculo():
                     atende = (res_novo.em_v <= tensoes_adm.etoque_v
                               and res_novo.es_v <= tensoes_adm.epasso_v)
                     cenarios.append({
-                        "Mudança": f"haste: {de_atual.haste_comprimento_m}m → {Lr_novo}m "
-                                   f"(ρ_eq: {calc['rho_eq']:.0f}→{rho_novo:.0f})",
+                        "MudanÃ§a": f"haste: {de_atual.haste_comprimento_m}m â {Lr_novo}m "
+                                   f"(Ï_eq: {calc['rho_eq']:.0f}â{rho_novo:.0f})",
                         "Em [V]": f"{res_novo.em_v:.0f}",
                         "Etoque adm [V]": f"{tensoes_adm.etoque_v:.0f}",
-                        "Atende?": "✓" if atende else "✗",
+                        "Atende?": "â" if atende else "â",
                     })
 
-            # 4. Reduzir espaçamento da malha
+            # 4. Reduzir espaÃ§amento da malha
             for D_novo in [2.5, 2.0, 1.5]:
                 if D_novo < float(de_atual.espac_malha_principal_m):
                     geom_novo = GeometriaMalha(
@@ -937,10 +937,10 @@ def aba_calculo():
                     atende = (res_novo.em_v <= tensoes_adm.etoque_v
                               and res_novo.es_v <= tensoes_adm.epasso_v)
                     cenarios.append({
-                        "Mudança": f"D: {de_atual.espac_malha_principal_m}m → {D_novo}m",
+                        "MudanÃ§a": f"D: {de_atual.espac_malha_principal_m}m â {D_novo}m",
                         "Em [V]": f"{res_novo.em_v:.0f}",
                         "Etoque adm [V]": f"{tensoes_adm.etoque_v:.0f}",
-                        "Atende?": "✓" if atende else "✗",
+                        "Atende?": "â" if atende else "â",
                     })
 
             if cenarios:
@@ -950,17 +950,17 @@ def aba_calculo():
                     hide_index=True,
                 )
             st.info(
-                "💡 **Dica:** se nenhum cenário individual atende, "
-                "combine 2-3 mudanças (ex: hastes 5m + brita 0,15m + tc 0,3s). "
-                "O cálculo isolado mostra qual alavanca é mais eficaz."
+                "ð¡ **Dica:** se nenhum cenÃ¡rio individual atende, "
+                "combine 2-3 mudanÃ§as (ex: hastes 5m + brita 0,15m + tc 0,3s). "
+                "O cÃ¡lculo isolado mostra qual alavanca Ã© mais eficaz."
             )
 
-    # Gráficos
+    # GrÃ¡ficos
     st.divider()
-    st.subheader("📈 Visualizações")
+    st.subheader("ð VisualizaÃ§Ãµes")
 
     tab1, tab2, tab3, tab4 = st.tabs(
-        ["Verificação", "Planta da malha", "Mapa 3D de tensão", "Iteração"]
+        ["VerificaÃ§Ã£o", "Planta da malha", "Mapa 3D de tensÃ£o", "IteraÃ§Ã£o"]
     )
 
     with tab1:
@@ -997,8 +997,8 @@ def aba_calculo():
             use_container_width=True,
         )
         st.caption(
-            "⚠️ Aproximação visual da distribuição de tensão. "
-            "Cálculo rigoroso do perfil de tensão requer FEM (CDEGS, COMSOL)."
+            "â ï¸ AproximaÃ§Ã£o visual da distribuiÃ§Ã£o de tensÃ£o. "
+            "CÃ¡lculo rigoroso do perfil de tensÃ£o requer FEM (CDEGS, COMSOL)."
         )
 
     with tab4:
@@ -1011,11 +1011,11 @@ def aba_calculo():
 
 
 # ============================================================
-# ABA 6 - RELATÓRIO WORD
+# ABA 6 - RELATÃRIO WORD
 # ============================================================
 
 def aba_relatorio():
-    st.header("6. Relatório Word (.docx)")
+    st.header("6. RelatÃ³rio Word (.docx)")
 
     pid = st.session_state.get("projeto_id")
     if not pid:
@@ -1024,32 +1024,32 @@ def aba_relatorio():
 
     p = repo.busca_projeto(pid, tenant_id=tenant_id_atual())
     if not p or not p.resultado or not p.dados_entrada:
-        st.warning("Execute o cálculo (aba 5) antes de gerar o relatório.")
+        st.warning("Execute o cÃ¡lculo (aba 5) antes de gerar o relatÃ³rio.")
         return
 
-    # Resumo do que será gerado
+    # Resumo do que serÃ¡ gerado
     st.markdown(f"""
-    O relatório conterá:
+    O relatÃ³rio conterÃ¡:
     
-    1. **Capa** com identificação ({p.cliente} · {p.numero_projeto} R{p.revisao})
+    1. **Capa** com identificaÃ§Ã£o ({p.cliente} Â· {p.numero_projeto} R{p.revisao})
     2. **Objetivo** do estudo
-    3. **Metodologia** com equações IEEE 80/NBR 15751 e práticas construtivas
+    3. **Metodologia** com equaÃ§Ãµes IEEE 80/NBR 15751 e prÃ¡ticas construtivas
     4. **Dados de entrada** (solo, geometria, brita, hastes, curto)
-    5. **Resultados** com tabelas e gráficos exportados
-    6. **Conclusão** ({"✓ Atende" if p.resultado.atende_geral else "✗ Não atende"})
-    7. **Referências** bibliográficas
+    5. **Resultados** com tabelas e grÃ¡ficos exportados
+    6. **ConclusÃ£o** ({"â Atende" if p.resultado.atende_geral else "â NÃ£o atende"})
+    7. **ReferÃªncias** bibliogrÃ¡ficas
     """)
 
-    # Verifica se há cálculo em sessão para exportar gráficos
+    # Verifica se hÃ¡ cÃ¡lculo em sessÃ£o para exportar grÃ¡ficos
     calc = st.session_state.get("calc")
     if not calc:
         st.warning(
-            "⚠️ Os gráficos só são exportados se o cálculo foi executado "
-            "**nesta sessão** (aba 5). Execute o cálculo novamente para "
-            "incluir gráficos no relatório."
+            "â ï¸ Os grÃ¡ficos sÃ³ sÃ£o exportados se o cÃ¡lculo foi executado "
+            "**nesta sessÃ£o** (aba 5). Execute o cÃ¡lculo novamente para "
+            "incluir grÃ¡ficos no relatÃ³rio."
         )
 
-    if st.button("📄 Gerar relatório Word", type="primary"):
+    if st.button("ð Gerar relatÃ³rio Word", type="primary"):
         from relatorio.gerador_word import gera_relatorio_word, nome_arquivo_padrao
         from relatorio.exportador_imagens import (
             exporta_curva_wenner, exporta_planta_malha,
@@ -1060,7 +1060,7 @@ def aba_relatorio():
             plot_mapa_tensao_3d, plot_verificacao,
         )
 
-        with st.spinner("Gerando relatório..."):
+        with st.spinner("Gerando relatÃ³rio..."):
             try:
                 imagens = {}
                 falhas_export = []
@@ -1099,7 +1099,7 @@ def aba_relatorio():
                     else:
                         falhas_export.append("Planta da malha")
 
-                    # 3. Verificação
+                    # 3. VerificaÃ§Ã£o
                     fig_v = plot_verificacao(
                         res.em_v, res.es_v,
                         tensoes_adm.etoque_v, tensoes_adm.epasso_v,
@@ -1111,9 +1111,9 @@ def aba_relatorio():
                     if img:
                         imagens["verif"] = img
                     else:
-                        falhas_export.append("Gráfico de verificação")
+                        falhas_export.append("GrÃ¡fico de verificaÃ§Ã£o")
 
-                    # 4. Mapa 3D (fallback é 2D contour - aceitável para Word)
+                    # 4. Mapa 3D (fallback Ã© 2D contour - aceitÃ¡vel para Word)
                     fig_3d = plot_mapa_tensao_3d(
                         float(de.largura_m), float(de.comprimento_m),
                         res.rg_adotado_ohm, calc["corrente"].ig_a,
@@ -1127,13 +1127,13 @@ def aba_relatorio():
                     if img:
                         imagens["mapa3d"] = img
                     else:
-                        falhas_export.append("Mapa de tensão")
+                        falhas_export.append("Mapa de tensÃ£o")
 
                 if falhas_export:
                     st.warning(
-                        f"⚠️ Não foi possível exportar: "
+                        f"â ï¸ NÃ£o foi possÃ­vel exportar: "
                         f"{', '.join(falhas_export)}. "
-                        "O relatório vai marcar como '[Figura ausente]'."
+                        "O relatÃ³rio vai marcar como '[Figura ausente]'."
                     )
 
                 # Logo BK (se existir)
@@ -1149,30 +1149,30 @@ def aba_relatorio():
 
                 # Disponibiliza download
                 st.success(
-                    f"✅ Relatório gerado ({len(docx_bytes)/1024:.0f} KB) · "
-                    f"{len(imagens)} de 4 figuras incluídas"
+                    f"â RelatÃ³rio gerado ({len(docx_bytes)/1024:.0f} KB) Â· "
+                    f"{len(imagens)} de 4 figuras incluÃ­das"
                 )
                 st.download_button(
-                    label=f"⬇️ Baixar {nome_arq}",
+                    label=f"â¬ï¸ Baixar {nome_arq}",
                     data=docx_bytes,
                     file_name=nome_arq,
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 )
             except Exception as e:
-                st.error(f"Erro ao gerar relatório: {e}")
+                st.error(f"Erro ao gerar relatÃ³rio: {e}")
                 import traceback
                 st.code(traceback.format_exc())
 
-    # Histórico de relatórios gerados (busca em sessão nova - evita
+    # HistÃ³rico de relatÃ³rios gerados (busca em sessÃ£o nova - evita
     # DetachedInstanceError ao acessar relacionamento de objeto ORM
-    # de sessão já fechada)
+    # de sessÃ£o jÃ¡ fechada)
     relatorios = repo.lista_relatorios_de(pid)
     if relatorios:
         st.divider()
-        st.subheader("📁 Histórico de relatórios gerados")
+        st.subheader("ð HistÃ³rico de relatÃ³rios gerados")
         for r in relatorios:
             st.text(
-                f"  {r['gerado_em'].strftime('%d/%m/%Y %H:%M')} — "
+                f"  {r['gerado_em'].strftime('%d/%m/%Y %H:%M')} â "
                 f"{r['nome_arquivo']}"
                 + (f" (por {r['gerado_por']})" if r['gerado_por'] else "")
             )
@@ -1183,21 +1183,21 @@ def aba_relatorio():
 # ============================================================
 
 def main():
-    # ── AUTH GATE — deve ser a primeira coisa executada ───────────────────────
-    # Se não autenticado, mostra apenas a tela de login e para.
+    # ââ AUTH GATE â deve ser a primeira coisa executada âââââââââââââââââââââââ
+    # Se nÃ£o autenticado, mostra apenas a tela de login e para.
     autenticado = render_login()
     if not autenticado:
         st.stop()
 
-    # ── Página de administração (admin only) ──────────────────────────────────
+    # ââ PÃ¡gina de administraÃ§Ã£o (admin only) ââââââââââââââââââââââââââââââââââ
     if st.session_state.get("pagina_admin"):
         render_admin()
         st.stop()
 
-    # ── App principal (apenas para usuários autenticados) ─────────────────────
-    # Bloqueia edição para viewers
+    # ââ App principal (apenas para usuÃ¡rios autenticados) âââââââââââââââââââââ
+    # Bloqueia ediÃ§Ã£o para viewers
     if is_viewer():
-        st.info("🔍 Você está em modo de visualização. Contate o administrador para editar projetos.")
+        st.info("ð VocÃª estÃ¡ em modo de visualizaÃ§Ã£o. Contate o administrador para editar projetos.")
 
     sidebar_projetos()
 
@@ -1206,8 +1206,8 @@ def main():
         "2. Solo (Wenner)",
         "3. Geometria",
         "4. Curto",
-        "5. Cálculo",
-        "6. Relatório",
+        "5. CÃ¡lculo",
+        "6. RelatÃ³rio",
     ])
     with abas[0]: aba_projeto()
     with abas[1]: aba_solo()
@@ -1219,8 +1219,8 @@ def main():
     st.sidebar.divider()
     st.sidebar.caption(
         "BK Malha de Terra v2.0\n\n"
-        "IEEE 80-2013 · NBR 15751 · NBR 7117\n"
-        "Multi-tenant SaaS · BK Engenharia"
+        "IEEE 80-2013 Â· NBR 15751 Â· NBR 7117\n"
+        "Multi-tenant SaaS Â· BK Engenharia"
     )
 
 
