@@ -8,7 +8,7 @@ serializáveis em JSON e compatíveis com SQLAlchemy.
 NumPy retorna tipos como np.float64, np.int64, np.bool_ que não são
 serializáveis pelo módulo json padrão e podem causar problemas em
 algumas drivers de banco. Esta função normaliza tudo recursivamente.
-"""
+"""h
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ def to_python(valor: Any) -> Any:
     return str(valor)
 
 
-def sanitiza_kwargs(**kwargs: Any) -> dict:
+def sanitiza_kwargs(kwargs: dict) -> dict:
     """
     Aplica `to_python` em todos os valores de um dict de kwargs.
 
