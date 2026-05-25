@@ -2,21 +2,21 @@
 relatorio/gerador_word.py
 =========================
 
-Gera o relatório técnico .docx a partir dos dados de um projeto persistido
-no banco. Usa python-docx + OMML para equações nativas do Word.
+Gera o relat?rio t?cnico .docx a partir dos dados de um projeto persistido
+no banco. Usa python-docx + OMML para equa??es nativas do Word.
 
 Estrutura do documento:
-    - Capa (logo BK, identificação)
+    - Capa (logo BK, identifica??o)
     - 1. Objetivo
-    - 2. Metodologia (subseções 2.1 a 2.7 com EQUAÇÕES OMML NATIVAS)
+    - 2. Metodologia (subse??es 2.1 a 2.7 com EQUA??ES OMML NATIVAS)
     - 3. Dados de entrada (tabelas)
-    - 4. Resultados (tabelas + gráficos PNG)
-    - 5. Conclusão
-    - 6. Referências
+    - 4. Resultados (tabelas + gr?ficos PNG)
+    - 5. Conclus?o
+    - 6. Refer?ncias
 
-Equações: marcadores [[EQ:nome]] no texto são substituídos por
-parágrafos OMML inseridos no documento (renderizados pelo Word como
-equações editáveis, não como imagens).
+Equa??es: marcadores [[EQ:nome]] no texto s?o substitu?dos por
+par?grafos OMML inseridos no documento (renderizados pelo Word como
+equa??es edit?veis, n?o como imagens).
 
 Imagens: passar via dict `imagens` com chaves 'wenner', 'planta',
 'verif', 'mapa3d' e valores em bytes (PNG).
@@ -54,16 +54,16 @@ COR_VERMELHO = RGBColor(0xC0, 0x39, 0x2B)
 COR_CINZA_CLARO = "F0F0F0"
 COR_AZUL_CLARO = "D5E8F0"
 
-# Regex para detectar marcadores de equação
+# Regex para detectar marcadores de equa??o
 RE_EQUACAO = re.compile(r"\[\[EQ:([a-zA-Z0-9_]+)\]\]")
 
 
 # ============================================================
-# UTILITÁRIOS DE ESTILO
+# UTILIT?RIOS DE ESTILO
 # ============================================================
 
 def _set_cell_shading(cell, color_hex: str):
-    """Aplica cor de fundo a uma célula de tabela."""
+    """Aplica cor de fundo a uma c?lula de tabela."""
     tc_pr = cell._tc.get_or_add_tcPr()
     shd = OxmlElement("w:shd")
     shd.set(qn("w:val"), "clear")
@@ -73,7 +73,7 @@ def _set_cell_shading(cell, color_hex: str):
 
 
 def _add_page_number(paragraph):
-    """Adiciona campo de numeração de página."""
+    """Adiciona campo de numera??o de p?gina."""
     run = paragraph.add_run()
     fldChar1 = OxmlElement("w:fldChar")
     fldChar1.set(qn("w:fldCharType"), "begin")
@@ -87,7 +87,7 @@ def _add_page_number(paragraph):
 
 
 def _config_estilos(doc: Document):
-    """Configura estilos de heading e parágrafo padrão."""
+    """Configura estilos de heading e par?grafo padr?o."""
     normal = doc.styles["Normal"]
     normal.font.name = "Calibri"
     normal.font.size = Pt(11)
@@ -124,7 +124,7 @@ def _config_pagina(doc: Document):
     header = section.header
     p = header.paragraphs[0]
     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    run = p.add_run("BK Engenharia · Memória de Cálculo - Malha de Aterramento")
+    run = p.add_run("BK Engenharia ? Mem?ria de C?lculo - Malha de Aterramento")
     run.font.size = Pt(9)
     run.font.color.rgb = COR_AZUL_BK
     run.italic = True
@@ -132,24 +132,24 @@ def _config_pagina(doc: Document):
     footer = section.footer
     pf = footer.paragraphs[0]
     pf.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    run = pf.add_run("Página ")
+    run = pf.add_run("P?gina ")
     run.font.size = Pt(9)
     _add_page_number(pf)
 
 
 # ============================================================
-# INSERÇÃO DE EQUAÇÕES OMML
+# INSER??O DE EQUA??ES OMML
 # ============================================================
 
 def _insere_equacao_omml(doc: Document, identificador: str):
     """
-    Insere equação OMML como parágrafo centralizado no documento.
+    Insere equa??o OMML como par?grafo centralizado no documento.
 
-    A equação é renderizada nativamente pelo Word (não é imagem),
-    permitindo edição posterior pelo usuário.
+    A equa??o ? renderizada nativamente pelo Word (n?o ? imagem),
+    permitindo edi??o posterior pelo usu?rio.
 
-    Implementação: cria um <w:p> normal e injeta o <m:oMathPara> dentro.
-    Isso é exigido pelo schema OOXML — todo elemento direto do body deve
+    Implementa??o: cria um <w:p> normal e injeta o <m:oMathPara> dentro.
+    Isso ? exigido pelo schema OOXML ? todo elemento direto do body deve
     ser <w:p>, <w:tbl> ou <w:sectPr>.
 
     Args:
@@ -160,32 +160,32 @@ def _insere_equacao_omml(doc: Document, identificador: str):
         # Fallback: insere como texto plano destacado, em vez de quebrar
         par = doc.add_paragraph()
         par.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = par.add_run(f"[Equação '{identificador}' não encontrada]")
+        run = par.add_run(f"[Equa??o '{identificador}' n?o encontrada]")
         run.italic = True
         run.font.color.rgb = COR_VERMELHO
         return
 
-    # Cria um parágrafo normal centralizado
+    # Cria um par?grafo normal centralizado
     par = doc.add_paragraph()
     par.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # Pega o XML da equação e injeta DENTRO do <w:p> recém-criado
+    # Pega o XML da equa??o e injeta DENTRO do <w:p> rec?m-criado
     xml = EQUACOES_OMML[identificador].strip()
     omath_element = parse_xml(xml)
     par._p.append(omath_element)
 
 
 # ============================================================
-# RENDERIZAÇÃO DE TEXTO COM EQUAÇÕES
+# RENDERIZA??O DE TEXTO COM EQUA??ES
 # ============================================================
 
 def _renderiza_texto_com_equacoes(doc: Document, texto: str):
     """
     Renderiza um bloco de texto da metodologia processando:
-        - **Subtítulos** em negrito → Heading 3
-        - [[EQ:nome]] → equação OMML centralizada
-        - **negrito** inline → run negrito
-        - parágrafos separados por linha em branco
+        - **Subt?tulos** em negrito ? Heading 3
+        - [[EQ:nome]] ? equa??o OMML centralizada
+        - **negrito** inline ? run negrito
+        - par?grafos separados por linha em branco
 
     Args:
         doc  : documento python-docx
@@ -200,26 +200,26 @@ def _renderiza_texto_com_equacoes(doc: Document, texto: str):
         primeira = linhas[0]
         texto_completo = " ".join(linhas)
 
-        # Subtítulo: linha completa começa e termina com **
+        # Subt?tulo: linha completa come?a e termina com **
         if (primeira.startswith("**") and primeira.endswith("**")
                 and len(linhas) == 1):
             doc.add_heading(primeira.strip("*").strip(), level=3)
             continue
 
-        # Múltiplas linhas onde a primeira é subtítulo em negrito
+        # M?ltiplas linhas onde a primeira ? subt?tulo em negrito
         if (primeira.startswith("**") and primeira.endswith("**")
                 and len(linhas) > 1):
             doc.add_heading(primeira.strip("*").strip(), level=3)
             texto_completo = " ".join(linhas[1:])
 
-        # Verifica se o bloco É APENAS uma equação
+        # Verifica se o bloco ? APENAS uma equa??o
         match_solo = RE_EQUACAO.fullmatch(texto_completo)
         if match_solo:
             _insere_equacao_omml(doc, match_solo.group(1))
             continue
 
-        # Bloco com equações inline misturadas com texto:
-        # quebra em segmentos texto/equação e renderiza
+        # Bloco com equa??es inline misturadas com texto:
+        # quebra em segmentos texto/equa??o e renderiza
         partes = RE_EQUACAO.split(texto_completo)
         # split com 1 grupo retorna: [texto1, id_eq1, texto2, id_eq2, ...]
         i = 0
@@ -232,7 +232,7 @@ def _renderiza_texto_com_equacoes(doc: Document, texto: str):
                     par_atual = doc.add_paragraph()
                     _adiciona_runs_com_negrito(par_atual, segmento.strip())
             else:
-                # Identificador de equação
+                # Identificador de equa??o
                 _insere_equacao_omml(doc, segmento)
                 par_atual = None
             i += 1
@@ -249,7 +249,7 @@ def _adiciona_runs_com_negrito(paragrafo, texto: str):
 
 
 def _adiciona_paragrafo_simples(doc: Document, texto: str):
-    """Adiciona texto multi-parágrafo SEM processamento de equações."""
+    """Adiciona texto multi-par?grafo SEM processamento de equa??es."""
     for bloco in texto.strip().split("\n\n"):
         linhas = [l.strip() for l in bloco.strip().split("\n") if l.strip()]
         if not linhas:
@@ -260,7 +260,7 @@ def _adiciona_paragrafo_simples(doc: Document, texto: str):
 
 
 # ============================================================
-# CAPA E SEÇÕES PRINCIPAIS
+# CAPA E SE??ES PRINCIPAIS
 # ============================================================
 
 def _adiciona_capa(doc: Document, p: Projeto, logo_path: Optional[str] = None):
@@ -279,14 +279,14 @@ def _adiciona_capa(doc: Document, p: Projeto, logo_path: Optional[str] = None):
 
     par = doc.add_paragraph()
     par.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = par.add_run("MEMÓRIA DE CÁLCULO")
+    run = par.add_run("MEM?RIA DE C?LCULO")
     run.font.size = Pt(28)
     run.font.bold = True
     run.font.color.rgb = COR_AZUL_BK
 
     par = doc.add_paragraph()
     par.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = par.add_run("MALHA DE ATERRAMENTO DE SUBESTAÇÃO")
+    run = par.add_run("MALHA DE ATERRAMENTO DE SUBESTA??O")
     run.font.size = Pt(20)
     run.font.bold = True
     run.font.color.rgb = COR_AZUL_BK
@@ -312,13 +312,13 @@ def _adiciona_capa(doc: Document, p: Projeto, logo_path: Optional[str] = None):
 
     rows_data = [
         ("Cliente", p.cliente),
-        ("Concessionária", p.concessionaria or "—"),
-        ("Número do projeto", p.numero_projeto),
-        ("Revisão", f"R{p.revisao}"),
-        ("Data do cálculo", p.data_calculo.strftime("%d/%m/%Y")),
-        ("Responsável técnico",
-         f"{p.responsavel_tecnico or '—'}"
-         + (f"  ·  CREA {p.crea_responsavel}" if p.crea_responsavel else "")),
+        ("Concession?ria", p.concessionaria or "?"),
+        ("N?mero do projeto", p.numero_projeto),
+        ("Revis?o", f"R{p.revisao}"),
+        ("Data do c?lculo", p.data_calculo.strftime("%d/%m/%Y")),
+        ("Respons?vel t?cnico",
+         f"{p.responsavel_tecnico or '?'}"
+         + (f"  ?  CREA {p.crea_responsavel}" if p.crea_responsavel else "")),
     ]
     for i, (label, value) in enumerate(rows_data):
         c1, c2 = tabela.rows[i].cells
@@ -344,14 +344,14 @@ def _adiciona_secao_objetivo(doc: Document, p: Projeto):
         revisao=p.revisao,
         concessionaria=p.concessionaria or "(a definir)",
         responsavel=p.responsavel_tecnico or "(a definir)",
-        crea_responsavel=p.crea_responsavel or "—",
+        crea_responsavel=p.crea_responsavel or "?",
         data_calculo=p.data_calculo.strftime("%d/%m/%Y"),
     )
     _adiciona_paragrafo_simples(doc, texto)
 
 
 def _adiciona_secao_metodologia(doc: Document):
-    """Renderiza metodologia completa com EQUAÇÕES OMML inline."""
+    """Renderiza metodologia completa com EQUA??ES OMML inline."""
     doc.add_heading("2. Metodologia", level=1)
     _adiciona_paragrafo_simples(doc, METODOLOGIA_INTRO)
 
@@ -368,7 +368,7 @@ def _adiciona_secao_metodologia(doc: Document):
 
 
 def _adiciona_tabela_par(doc: Document, dados: list[tuple[str, str]]):
-    """Tabela de 2 colunas (parâmetro, valor)."""
+    """Tabela de 2 colunas (par?metro, valor)."""
     tab = doc.add_table(rows=len(dados), cols=2)
     tab.style = "Light Grid Accent 1"
     tab.autofit = False
@@ -387,11 +387,11 @@ def _adiciona_secao_dados_entrada(doc: Document, p: Projeto):
     doc.add_heading("3. Dados de Entrada", level=1)
     de = p.dados_entrada
 
-    doc.add_heading("3.1. Medições de resistividade do solo (Wenner)", level=2)
+    doc.add_heading("3.1. Medi??es de resistividade do solo (Wenner)", level=2)
     if p.medicoes_wenner:
         tab = doc.add_table(rows=1 + len(p.medicoes_wenner), cols=4)
         tab.style = "Light Grid Accent 1"
-        headers = ["Ponto", "a [m]", "R [Ω]", "ρ aparente [Ω·m]"]
+        headers = ["Ponto", "a [m]", "R [?]", "? aparente [??m]"]
         for i, h in enumerate(headers):
             c = tab.rows[0].cells[i]
             c.text = h
@@ -404,46 +404,46 @@ def _adiciona_secao_dados_entrada(doc: Document, p: Projeto):
             row.cells[0].text = str(m.ponto)
             row.cells[1].text = f"{float(m.espacamento_m):.2f}"
             row.cells[2].text = f"{float(m.resistencia_ohm):.4f}"
-            row.cells[3].text = f"{float(m.rho_aparente):.1f}" if m.rho_aparente else "—"
+            row.cells[3].text = f"{float(m.rho_aparente):.1f}" if m.rho_aparente else "?"
 
-    doc.add_heading("3.2. Geometria da subestação", level=2)
+    doc.add_heading("3.2. Geometria da subesta??o", level=2)
     _adiciona_tabela_par(doc, [
         ("Largura W", f"{float(de.largura_m):.2f} m"),
         ("Comprimento L", f"{float(de.comprimento_m):.2f} m"),
-        ("Área A", f"{float(de.largura_m) * float(de.comprimento_m):.1f} m²"),
+        ("?rea A", f"{float(de.largura_m) * float(de.comprimento_m):.1f} m?"),
         ("Profundidade da malha h", f"{float(de.profundidade_malha_m):.2f} m"),
-        ("Espaçamento da malha principal D",
+        ("Espa?amento da malha principal D",
          f"{float(de.espac_malha_principal_m):.2f} m"),
-        ("Espaçamento da malha de junção (bordas)",
+        ("Espa?amento da malha de jun??o (bordas)",
          f"{float(de.espac_malha_juncao_m or 0):.2f} m"),
     ])
 
     doc.add_heading("3.3. Brita superficial", level=2)
     _adiciona_tabela_par(doc, [
         ("Espessura hs", f"{float(de.brita_espessura_m):.3f} m"),
-        ("Resistividade ρs", f"{float(de.brita_resistividade_ohm):.0f} Ω·m"),
+        ("Resistividade ?s", f"{float(de.brita_resistividade_ohm):.0f} ??m"),
     ])
 
     doc.add_heading("3.4. Hastes copperweld", level=2)
     _adiciona_tabela_par(doc, [
         ("Comprimento Lr", f"{float(de.haste_comprimento_m):.2f} m"),
-        ("Diâmetro d", f"{float(de.haste_diametro_mm):.3f} mm"),
+        ("Di?metro d", f"{float(de.haste_diametro_mm):.3f} mm"),
     ])
 
-    doc.add_heading("3.5. Dados elétricos do curto-circuito", level=2)
+    doc.add_heading("3.5. Dados el?tricos do curto-circuito", level=2)
     _adiciona_tabela_par(doc, [
-        ("Corrente simétrica de falta 3I₀",
+        ("Corrente sim?trica de falta 3I?",
          f"{float(de.i_falta_3i0_ka):.3f} kA"),
-        ("Tempo de eliminação tc",
+        ("Tempo de elimina??o tc",
          f"{float(de.tempo_eliminacao_s):.3f} s"),
-        ("Fator de divisão Sf", f"{float(de.sf_div_corrente):.2f}"),
-        ("Relação X/R", f"{float(de.xr_ratio or 0):.1f}"),
+        ("Fator de divis?o Sf", f"{float(de.sf_div_corrente):.2f}"),
+        ("Rela??o X/R", f"{float(de.xr_ratio or 0):.1f}"),
         ("Peso da pessoa (Dalziel)", f"{int(de.peso_pessoa_kg)} kg"),
     ])
 
 
 def _adiciona_imagem(doc: Document, image_bytes: bytes, legenda: str):
-    """Adiciona imagem centralizada com legenda em itálico."""
+    """Adiciona imagem centralizada com legenda em it?lico."""
     par = doc.add_paragraph()
     par.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = par.add_run()
@@ -461,7 +461,7 @@ def _adiciona_imagem(doc: Document, image_bytes: bytes, legenda: str):
 
 
 def _adiciona_aviso_imagem_faltando(doc: Document, legenda: str):
-    """Quando a imagem não foi gerada, deixa marcação visível em vermelho."""
+    """Quando a imagem n?o foi gerada, deixa marca??o vis?vel em vermelho."""
     par = doc.add_paragraph()
     par.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = par.add_run(f"[Figura ausente: {legenda}]")
@@ -473,18 +473,18 @@ def _adiciona_secao_resultados(doc: Document, p: Projeto, imagens: dict):
     doc.add_heading("4. Resultados", level=1)
     r = p.resultado
 
-    doc.add_heading("4.1. Estratificação do solo", level=2)
+    doc.add_heading("4.1. Estratifica??o do solo", level=2)
     _adiciona_tabela_par(doc, [
-        ("ρ₁ (camada superior)", f"{float(r.rho1_ohm_m or 0):.1f} Ω·m"),
-        ("ρ₂ (camada inferior)", f"{float(r.rho2_ohm_m or 0):.1f} Ω·m"),
-        ("h₁ (espessura camada 1)", f"{float(r.h1_m or 0):.2f} m"),
-        ("ρ_equivalente (Sverak/Schwarz)",
-         f"{float(r.rho_equivalente or 0):.1f} Ω·m"),
+        ("?? (camada superior)", f"{float(r.rho1_ohm_m or 0):.1f} ??m"),
+        ("?? (camada inferior)", f"{float(r.rho2_ohm_m or 0):.1f} ??m"),
+        ("h? (espessura camada 1)", f"{float(r.h1_m or 0):.2f} m"),
+        ("?_equivalente (Sverak/Schwarz)",
+         f"{float(r.rho_equivalente or 0):.1f} ??m"),
     ])
     if "wenner" in imagens:
         _adiciona_imagem(
             doc, imagens["wenner"],
-            "Figura 1 — Curva de Wenner e ajuste do modelo de 2 camadas"
+            "Figura 1 ? Curva de Wenner e ajuste do modelo de 2 camadas"
         )
     else:
         _adiciona_aviso_imagem_faltando(
@@ -494,92 +494,92 @@ def _adiciona_secao_resultados(doc: Document, p: Projeto, imagens: dict):
     doc.add_heading("4.2. Corrente de malha", level=2)
     _adiciona_tabela_par(doc, [
         ("Fator de decremento Df", f"{float(r.df_decremento or 1):.4f}"),
-        ("IG (corrente máxima de malha)",
+        ("IG (corrente m?xima de malha)",
          f"{float(r.ig_corrente_malha_a or 0):.0f} A"),
     ])
 
     doc.add_heading("4.3. Condutor da malha (Sverak)", level=2)
     _adiciona_tabela_par(doc, [
         ("Bitola calculada",
-         f"{float(r.bitola_calculada_mm2 or 0):.2f} mm²"),
+         f"{float(r.bitola_calculada_mm2 or 0):.2f} mm?"),
         ("Bitola adotada",
-         f"{float(r.bitola_adotada_mm2 or 0):.0f} mm²"),
+         f"{float(r.bitola_adotada_mm2 or 0):.0f} mm?"),
     ])
 
-    doc.add_heading("4.4. Tensões admissíveis pelo corpo humano", level=2)
+    doc.add_heading("4.4. Tens?es admiss?veis pelo corpo humano", level=2)
     _adiciona_tabela_par(doc, [
-        ("Cs (fator de redução brita)", f"{float(r.cs_brita or 0):.3f}"),
-        ("E_toque admissível", f"{float(r.etoque_admissivel_v or 0):.1f} V"),
-        ("E_passo admissível", f"{float(r.epasso_admissivel_v or 0):.1f} V"),
+        ("Cs (fator de redu??o brita)", f"{float(r.cs_brita or 0):.3f}"),
+        ("E_toque admiss?vel", f"{float(r.etoque_admissivel_v or 0):.1f} V"),
+        ("E_passo admiss?vel", f"{float(r.epasso_admissivel_v or 0):.1f} V"),
     ])
 
-    doc.add_heading("4.5. Resistência da malha", level=2)
+    doc.add_heading("4.5. Resist?ncia da malha", level=2)
     _adiciona_tabela_par(doc, [
-        ("Rg por Sverak", f"{float(r.rg_sverak_ohm or 0):.4f} Ω"),
+        ("Rg por Sverak", f"{float(r.rg_sverak_ohm or 0):.4f} ?"),
         ("Rg por Schwarz (adotado)",
-         f"{float(r.rg_schwarz_ohm or 0):.4f} Ω"),
+         f"{float(r.rg_schwarz_ohm or 0):.4f} ?"),
         ("GPR (Ground Potential Rise)",
          f"{float(r.gpr_v or 0):.1f} V"),
     ])
 
     doc.add_heading("4.6. Geometria final adotada", level=2)
     _adiciona_tabela_par(doc, [
-        ("Número de hastes", f"{r.num_hastes}"),
+        ("N?mero de hastes", f"{r.num_hastes}"),
         ("Comprimento total de cabo enterrado",
          f"{float(r.comprimento_total_cabo_m or 0):.1f} m"),
     ])
     if "planta" in imagens:
         _adiciona_imagem(
             doc, imagens["planta"],
-            "Figura 2 — Planta da malha de aterramento com posicionamento das hastes"
+            "Figura 2 ? Planta da malha de aterramento com posicionamento das hastes"
         )
     else:
         _adiciona_aviso_imagem_faltando(
             doc, "Planta da malha de aterramento"
         )
 
-    doc.add_heading("4.7. Verificação dos critérios IEEE 80", level=2)
+    doc.add_heading("4.7. Verifica??o dos crit?rios IEEE 80", level=2)
     _adiciona_tabela_par(doc, [
-        ("Em (tensão de malha calculada)",
+        ("Em (tens?o de malha calculada)",
          f"{float(r.em_tensao_malha_v or 0):.1f} V"),
-        ("E_toque admissível",
+        ("E_toque admiss?vel",
          f"{float(r.etoque_admissivel_v or 0):.1f} V"),
-        ("Atende critério de toque",
-         "✓ SIM" if r.atende_toque else "✗ NÃO"),
+        ("Atende crit?rio de toque",
+         "? SIM" if r.atende_toque else "? N?O"),
         ("Margem de toque",
          f"{float(r.margem_toque_pct or 0):+.1f}%"),
-        ("Es (tensão de passo calculada)",
+        ("Es (tens?o de passo calculada)",
          f"{float(r.es_tensao_passo_v or 0):.1f} V"),
-        ("E_passo admissível",
+        ("E_passo admiss?vel",
          f"{float(r.epasso_admissivel_v or 0):.1f} V"),
-        ("Atende critério de passo",
-         "✓ SIM" if r.atende_passo else "✗ NÃO"),
+        ("Atende crit?rio de passo",
+         "? SIM" if r.atende_passo else "? N?O"),
         ("Margem de passo",
          f"{float(r.margem_passo_pct or 0):+.1f}%"),
     ])
     if "verif" in imagens:
         _adiciona_imagem(
             doc, imagens["verif"],
-            "Figura 3 — Comparação entre tensões calculadas e admissíveis"
+            "Figura 3 ? Compara??o entre tens?es calculadas e admiss?veis"
         )
     else:
         _adiciona_aviso_imagem_faltando(
-            doc, "Comparação tensões calculadas vs admissíveis"
+            doc, "Compara??o tens?es calculadas vs admiss?veis"
         )
 
     if "mapa3d" in imagens:
         _adiciona_imagem(
             doc, imagens["mapa3d"],
-            "Figura 4 — Distribuição aproximada da tensão de toque sobre a SE"
+            "Figura 4 ? Distribui??o aproximada da tens?o de toque sobre a SE"
         )
     else:
         _adiciona_aviso_imagem_faltando(
-            doc, "Distribuição 3D da tensão de toque"
+            doc, "Distribui??o 3D da tens?o de toque"
         )
 
 
 def _adiciona_secao_conclusao(doc: Document, p: Projeto):
-    doc.add_heading("5. Conclusão", level=1)
+    doc.add_heading("5. Conclus?o", level=1)
     r = p.resultado
     if r.atende_geral:
         texto = CONCLUSAO_ATENDE.format(
@@ -607,7 +607,7 @@ def _adiciona_secao_conclusao(doc: Document, p: Projeto):
 
 
 def _adiciona_secao_referencias(doc: Document):
-    doc.add_heading("6. Referências Bibliográficas", level=1)
+    doc.add_heading("6. Refer?ncias Bibliogr?ficas", level=1)
     for i, ref in enumerate(REFERENCIAS, start=1):
         par = doc.add_paragraph()
         run = par.add_run(f"[{i}] ")
@@ -616,7 +616,7 @@ def _adiciona_secao_referencias(doc: Document):
 
 
 # ============================================================
-# FUNÇÃO PÚBLICA PRINCIPAL
+# FUN??O P?BLICA PRINCIPAL
 # ============================================================
 
 def gera_relatorio_word(
@@ -625,13 +625,13 @@ def gera_relatorio_word(
     logo_path: Optional[str] = None,
 ) -> bytes:
     """
-    Gera o relatório Word completo com equações OMML e gráficos.
+    Gera o relat?rio Word completo com equa??es OMML e gr?ficos.
 
     Args:
         projeto  : objeto Projeto com filhos eager-loaded.
         imagens  : dict com chaves 'wenner', 'planta', 'verif', 'mapa3d'
                     e valores em bytes (PNG). Chaves ausentes geram
-                    marcação "[Figura ausente]" em vermelho no relatório.
+                    marca??o "[Figura ausente]" em vermelho no relat?rio.
         logo_path: caminho opcional do logo BK (PNG).
 
     Returns:
@@ -640,7 +640,7 @@ def gera_relatorio_word(
     if not projeto.dados_entrada or not projeto.resultado:
         raise ValueError(
             "Projeto sem dados de entrada ou resultados. "
-            "Execute o cálculo primeiro."
+            "Execute o c?lculo primeiro."
         )
 
     doc = Document()
@@ -661,7 +661,7 @@ def gera_relatorio_word(
 
 
 def nome_arquivo_padrao(projeto: Projeto) -> str:
-    """Gera nome padrão: MC_MALHA_{NUMERO}_R{REV}_{CLIENTE}.docx"""
+    """Gera nome padr?o: MC_MALHA_{NUMERO}_R{REV}_{CLIENTE}.docx"""
     cliente_clean = "".join(
         c if c.isalnum() else "_" for c in (projeto.cliente or "Cliente")
     )[:30]
