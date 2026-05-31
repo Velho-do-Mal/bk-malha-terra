@@ -140,7 +140,7 @@ EQUACOES_OMML: dict[str, str] = {
                                         <m:radPr><m:degHide m:val="1"/></m:radPr>
                                         <m:deg/>
                                         <m:e>
-                                            <m:r><m:t>1 + (2n</m:t></m:r>
+                                            <m:r><m:t>1 + (2nh</m:t></m:r>
                                             <m:sSub>
                                                 <m:e><m:r>h<m:t/></m:r></m:e>
                                                 <m:sub><m:r><m:t>1</m:t></m:r></m:sub>
