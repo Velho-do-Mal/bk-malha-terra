@@ -29,7 +29,7 @@ import io
 import re
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from docx import Document
 from docx.enum.table import WD_TABLE_ALIGNMENT
@@ -38,7 +38,11 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement, parse_xml
 from docx.shared import Cm, Pt, RGBColor
 
-from data.models import Projeto
+# Import condicional: evita dependência de SQLAlchemy em tempo de execução
+# quando o módulo é importado apenas para type-checking (ex.: testes unitários)
+if TYPE_CHECKING:
+    from data.models import Projeto
+
 from relatorio.equacoes import EQUACOES_OMML
 from relatorio.textos import (
     CONCLUSAO_ATENDE, CONCLUSAO_NAO_ATENDE,
