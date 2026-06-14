@@ -179,45 +179,66 @@ def calcula_mapa_tensao(
     rg_ohm: float,
     ig_a: float,
     em_v: float,
-    n_pontos: int = 40,
+    n_pontos: int = 50,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Aproximação simplificada da distribuição de tensão de toque sobre a SE.
+    Aproximação da distribuição de tensão de toque sobre a área da SE.
 
-    Modelo: superposição de função de decaimento radial a partir das bordas.
-    No centro da malha: tensão ≈ 0 (referência).
-    Nas bordas: tensão máxima ≈ Em.
-    Fora: decai com 1/r.
+    Modelo físico simplificado (comportamento qualitativo, IEEE 80):
+    ─────────────────────────────────────────────────────────────────
+    • DENTRO da malha:
+        O potencial da superfície do solo é sustentado pelos condutores
+        enterrados. A tensão de toque é mínima próximo às interseções
+        de condutores (≈ 0) e máxima no centro geométrico de cada célula
+        da malha (≈ Em). Modelado com perfil senoidal ao quadrado a
+        partir do centro da malha até a borda.
 
-    Esta é uma aproximação visual - cálculo rigoroso requer FEM.
+    • FORA da malha:
+        O potencial de superfície decai rapidamente com a distância.
+        A tensão de toque sobe e depois decresce. Modelado com decaimento
+        exponencial a partir de Em na borda, comprimento característico
+        L ≈ 35 % do raio equivalente da malha.
 
-    Returns:
-        (X, Y, Z) com Z = tensão de toque [V] em cada ponto.
+    Continuidade garantida:
+        Em ambos os lados da borda, Etoque → Em (sem degrau visual).
+
+    ⚠️  Aproximação visual — cálculo rigoroso requer FEM (CDEGS, COMSOL).
+
+    Returns
+    -------
+    (X, Y, Z) grades NumPy com Z = tensão de toque aproximada [V].
     """
-    x = np.linspace(-comprimento * 0.2, comprimento * 1.2, n_pontos)
-    y = np.linspace(-largura * 0.2, largura * 1.2, n_pontos)
+    # Grade com margem de 30 % além da malha em cada lado
+    margin_x = comprimento * 0.30
+    margin_y = largura * 0.30
+    x = np.linspace(-margin_x, comprimento + margin_x, n_pontos)
+    y = np.linspace(-margin_y, largura + margin_y, n_pontos)
     X, Y = np.meshgrid(x, y)
 
-    # Distância ao centro da malha
-    cx, cy = comprimento / 2, largura / 2
-    dist_centro = np.sqrt((X - cx) ** 2 + (Y - cy) ** 2)
+    cx, cy = comprimento / 2.0, largura / 2.0
 
-    # Distância à borda mais próxima (negativo dentro)
-    dx = np.maximum(np.maximum(-X, X - comprimento), 0)
-    dy = np.maximum(np.maximum(-Y, Y - largura), 0)
-    dist_borda = np.sqrt(dx ** 2 + dy ** 2)
+    # Máscara dentro / fora da malha
+    inside = (X >= 0.0) & (X <= comprimento) & (Y >= 0.0) & (Y <= largura)
 
-    # Dentro da malha
-    dentro = (X >= 0) & (X <= comprimento) & (Y >= 0) & (Y <= largura)
+    # ── Dentro da malha: senoidal quadrática ──────────────────────
+    # Distância ao centro normalizada pela distância centro→canto
+    Rmax = np.sqrt(cx**2 + cy**2)
+    dist_centro = np.sqrt((X - cx)**2 + (Y - cy)**2)
+    d_norm = np.minimum(dist_centro / Rmax, 1.0)
+    # Etoque = 0 no centro (sobre o condutor) → Em na borda/cantos
+    E_inside = em_v * np.sin(np.pi / 2.0 * d_norm) ** 2
 
-    # Modelo simplificado:
-    # - Dentro: tensão = Em·sen(π·r/Rmax) (máxima nos cantos, mínima no centro)
-    # - Fora: tensão = Em·exp(-d/L) (decai exponencialmente)
-    Rmax = np.sqrt(cx ** 2 + cy ** 2)
-    dentro_tensao = em_v * (1.0 - np.cos(np.pi * dist_centro / Rmax) ** 2) * 0.5 + em_v * 0.3
-    fora_tensao = em_v * np.exp(-dist_borda / (max(comprimento, largura) * 0.3))
+    # ── Fora da malha: decaimento exponencial ─────────────────────
+    # Ponto mais próximo sobre a borda da malha
+    x_cl = np.clip(X, 0.0, comprimento)
+    y_cl = np.clip(Y, 0.0, largura)
+    dist_borda = np.sqrt((X - x_cl)**2 + (Y - y_cl)**2)
+    # Comprimento característico: ~35 % do raio equivalente da malha
+    L_decay = np.sqrt(comprimento * largura) * 0.35
+    # Na borda (dist=0) → Em; decresce para 0 ao longe
+    E_outside = em_v * np.exp(-dist_borda / L_decay)
 
-    Z = np.where(dentro, dentro_tensao, fora_tensao)
+    Z = np.where(inside, E_inside, E_outside)
     return X, Y, Z
 
 
@@ -230,37 +251,110 @@ def plot_mapa_tensao_3d(
     etoque_adm_v: float,
     titulo: str = "Distribuição da Tensão de Toque",
 ) -> go.Figure:
-    """Superfície 3D da tensão de toque com plano horizontal de admissível."""
+    """
+    Superfície 3D da tensão de toque com plano horizontal de limite admissível.
+
+    A superfície mostra a variação espacial da tensão de toque calculada pelo
+    modelo simplificado. O plano azul indica o valor admissível (IEEE 80).
+    Pontos acima do plano azul representam regiões onde o critério de segurança
+    seria excedido caso existissem equipamentos aterrados naquele local.
+    """
     X, Y, Z = calcula_mapa_tensao(largura, comprimento, rg_ohm, ig_a, em_v)
 
+    gpr_v = rg_ohm * ig_a
+    z_max = max(em_v, etoque_adm_v) * 1.15
+
+    # Proporção real da malha para o aspect ratio 3D
+    lado_max = max(comprimento, largura)
+    ax = comprimento / lado_max
+    ay = largura / lado_max
+
     fig = go.Figure()
+
+    # ── Superfície de tensão de toque ────────────────────────────
     fig.add_trace(go.Surface(
         x=X, y=Y, z=Z,
-        colorscale=[[0, "green"], [0.5, "yellow"], [1.0, "red"]],
-        cmin=0, cmax=max(em_v, etoque_adm_v) * 1.2,
-        colorbar=dict(title="V"),
-        name="Tensão",
+        colorscale=[
+            [0.00, "rgb(0, 130, 0)"],    # verde  – zona segura
+            [0.45, "rgb(230, 200, 0)"],  # amarelo – atenção
+            [1.00, "rgb(180, 0, 0)"],    # vermelho – zona crítica
+        ],
+        cmin=0.0,
+        cmax=z_max,
+        colorbar=dict(
+            title=dict(text="Etoque [V]", side="right"),
+            thickness=14,
+            len=0.65,
+            y=0.5,
+        ),
+        opacity=0.90,
+        name="Etoque(x,y)",
+        hovertemplate=(
+            "x = %{x:.1f} m<br>"
+            "y = %{y:.1f} m<br>"
+            "Etoque ≈ <b>%{z:.0f} V</b><extra></extra>"
+        ),
     ))
-    # Plano de Etoque admissível
+
+    # ── Plano horizontal: Etoque admissível ──────────────────────
     Z_lim = np.full_like(Z, etoque_adm_v)
     fig.add_trace(go.Surface(
         x=X, y=Y, z=Z_lim,
-        colorscale=[[0, "rgba(0,150,255,0.3)"], [1, "rgba(0,150,255,0.3)"]],
+        colorscale=[[0, "rgba(30,100,220,0.22)"], [1, "rgba(30,100,220,0.22)"]],
         showscale=False,
-        opacity=0.4,
-        name=f"Etoque adm = {etoque_adm_v:.0f} V",
+        opacity=0.38,
+        name=f"Eadm = {etoque_adm_v:.0f} V",
+        hovertemplate=f"Etoque admissível = {etoque_adm_v:.0f} V<extra></extra>",
+    ))
+
+    # ── Contorno da malha no plano Z = 0 ─────────────────────────
+    fig.add_trace(go.Scatter3d(
+        x=[0, comprimento, comprimento, 0, 0],
+        y=[0, 0, largura, largura, 0],
+        z=[0, 0, 0, 0, 0],
+        mode="lines",
+        line=dict(color="black", width=5),
+        name="Limite da malha",
+        hoverinfo="skip",
     ))
 
     fig.update_layout(
-        title=titulo,
-        scene=dict(
-            xaxis_title="x [m]",
-            yaxis_title="y [m]",
-            zaxis_title="Tensão [V]",
-            aspectmode="manual",
-            aspectratio=dict(x=2, y=2, z=1),
+        title=dict(
+            text=(
+                f"{titulo}<br>"
+                f"<sup>Em = {em_v:.0f} V  |  "
+                f"Eadm = {etoque_adm_v:.0f} V  |  "
+                f"GPR = {gpr_v:.0f} V  |  "
+                f"⚠️ Aproximação visual — cálculo rigoroso requer FEM</sup>"
+            ),
+            font=dict(size=13),
         ),
-        height=600,
+        scene=dict(
+            xaxis=dict(title="x [m] (comprimento)", gridcolor="lightgray",
+                       backgroundcolor="rgb(245,245,245)"),
+            yaxis=dict(title="y [m] (largura)", gridcolor="lightgray",
+                       backgroundcolor="rgb(245,245,245)"),
+            zaxis=dict(
+                title="Tensão de toque [V]",
+                gridcolor="lightgray",
+                backgroundcolor="rgb(245,245,245)",
+                range=[0.0, z_max],
+            ),
+            aspectmode="manual",
+            aspectratio=dict(x=ax * 1.6, y=ay * 1.6, z=0.65),
+            camera=dict(
+                eye=dict(x=-1.6, y=-1.6, z=1.1),
+                up=dict(x=0, y=0, z=1),
+            ),
+        ),
+        legend=dict(
+            x=0.01, y=0.99,
+            bgcolor="rgba(255,255,255,0.85)",
+            bordercolor="lightgray",
+            borderwidth=1,
+        ),
+        height=640,
+        margin=dict(l=0, r=0, t=90, b=0),
     )
     return fig
 
