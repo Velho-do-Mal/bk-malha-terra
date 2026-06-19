@@ -50,6 +50,7 @@ from data import repository as repo
 from data.db import testa_conexao
 
 # ---- UI ----
+from ui.aba_sistema_eletrico import aba_sistema_eletrico
 from ui.visualizacoes import (
     plot_curva_wenner, plot_iteracao_hastes, plot_mapa_tensao_3d,
     plot_planta_malha, plot_verificacao,
@@ -612,7 +613,7 @@ def aba_curto():
 # ============================================================
 
 def aba_calculo():
-    st.header("5. Cálculo IEEE 80 e Resultados")
+    st.header("6. Cálculo IEEE 80 e Resultados")
 
     if not st.session_state.get("projeto_id"):
         st.warning("Salve a identificação primeiro.")
@@ -1016,7 +1017,7 @@ def aba_calculo():
 # ============================================================
 
 def aba_relatorio():
-    st.header("6. Relatório Word (.docx)")
+    st.header("7. Relatório Word (.docx)")
 
     pid = st.session_state.get("projeto_id")
     if not pid:
@@ -1207,19 +1208,21 @@ def main():
         "2. Solo (Wenner)",
         "3. Geometria",
         "4. Curto",
-        "5. Cálculo",
-        "6. Relatório",
+        "5. Sistema Elétrico",
+        "6. Cálculo",
+        "7. Relatório",
     ])
     with abas[0]: aba_projeto()
     with abas[1]: aba_solo()
     with abas[2]: aba_geometria()
     with abas[3]: aba_curto()
-    with abas[4]: aba_calculo()
-    with abas[5]: aba_relatorio()
+    with abas[4]: aba_sistema_eletrico()
+    with abas[5]: aba_calculo()
+    with abas[6]: aba_relatorio()
 
     st.sidebar.divider()
     st.sidebar.caption(
-        "BK Malha de Terra v2.0\n\n"
+        "BK Malha de Terra v2.1\n\n"
         "IEEE 80-2013 · NBR 15751 · NBR 7117\n"
         "Multi-tenant SaaS · BK Engenharia"
     )
