@@ -15,8 +15,8 @@ from sqlalchemy.orm import selectinload
 
 from data.db import get_session
 from data.models import (
-    DadosEntrada, Projeto, RelatorioGerado, Resultado,
-    SoloWenner, Tenant, Usuario,
+    BarraSistema, DadosEntrada, Projeto, RelatorioGerado, Resultado,
+    ReleProtecao, SoloWenner, Tenant, TransformadorSE, Usuario,
 )
 from data.sanitizacao import sanitiza_kwargs, to_python
 
@@ -89,6 +89,9 @@ def busca_projeto(projeto_id: int, tenant_id: int) -> Optional[Projeto]:
                 selectinload(Projeto.dados_entrada),
                 selectinload(Projeto.resultado),
                 selectinload(Projeto.relatorios),
+                selectinload(Projeto.barras),
+                selectinload(Projeto.reles),
+                selectinload(Projeto.transformadores),
             )
         )
         return s.scalars(stmt).first()
@@ -255,3 +258,104 @@ def lista_relatorios_de(projeto_id: int):
             )
             for r in rels
         ]
+
+
+# ═══════════════════════════════════════════════════════════════
+# BARRAS DO SISTEMA ELÉTRICO
+# ═══════════════════════════════════════════════════════════════
+
+def salva_barras_sistema(
+    projeto_id: int,
+    tenant_id: int,
+    barras: list[dict],
+) -> int:
+    """Substitui todas as barras do projeto. Retorna quantidade salva."""
+    from data.sanitizacao import sanitiza_kwargs
+    with get_session() as s:
+        p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
+        if not p:
+            raise PermissionError("Projeto não encontrado ou acesso negado.")
+        s.query(BarraSistema).filter_by(projeto_id=projeto_id).delete()
+        for i, b in enumerate(barras):
+            b_clean = sanitiza_kwargs({k: v for k, v in b.items() if k != "projeto_id"})
+            s.add(BarraSistema(projeto_id=projeto_id, ordem=i, **b_clean))
+        return len(barras)
+
+
+def lista_barras(projeto_id: int) -> list[BarraSistema]:
+    with get_session() as s:
+        return (
+            s.query(BarraSistema)
+            .filter_by(projeto_id=projeto_id)
+            .order_by(BarraSistema.ordem)
+            .all()
+        )
+
+
+# ═══════════════════════════════════════════════════════════════
+# RELÉS DE PROTEÇÃO
+# ═══════════════════════════════════════════════════════════════
+
+def salva_reles(
+    projeto_id: int,
+    tenant_id: int,
+    reles: list[dict],
+) -> int:
+    """Substitui todos os relés. Calcula tc automaticamente."""
+    from data.sanitizacao import sanitiza_kwargs
+    with get_session() as s:
+        p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
+        if not p:
+            raise PermissionError("Projeto não encontrado ou acesso negado.")
+        s.query(ReleProtecao).filter_by(projeto_id=projeto_id).delete()
+        for r in reles:
+            r_clean = sanitiza_kwargs({k: v for k, v in r.items() if k != "projeto_id"})
+            if not r_clean.get("tempo_total_tc_s"):
+                t_r = float(r_clean.get("tempo_rele_s") or 0)
+                t_dj = float(r_clean.get("tempo_abertura_dj_s") or 0.05)
+                r_clean["tempo_total_tc_s"] = round(t_r + t_dj, 4)
+            s.add(ReleProtecao(projeto_id=projeto_id, **r_clean))
+        return len(reles)
+
+
+def lista_reles(projeto_id: int) -> list[ReleProtecao]:
+    with get_session() as s:
+        return (
+            s.query(ReleProtecao)
+            .filter_by(projeto_id=projeto_id)
+            .order_by(ReleProtecao.nivel, ReleProtecao.id)
+            .all()
+        )
+
+
+def get_tc_adotado(projeto_id: int) -> Optional[float]:
+    with get_session() as s:
+        r = s.query(ReleProtecao).filter_by(projeto_id=projeto_id, e_tc_adotado=True).first()
+        return float(r.tempo_total_tc_s) if r and r.tempo_total_tc_s else None
+
+
+# ═══════════════════════════════════════════════════════════════
+# TRANSFORMADORES
+# ═══════════════════════════════════════════════════════════════
+
+def salva_transformadores(
+    projeto_id: int,
+    tenant_id: int,
+    transformadores: list[dict],
+) -> int:
+    """Substitui todos os transformadores do projeto."""
+    from data.sanitizacao import sanitiza_kwargs
+    with get_session() as s:
+        p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
+        if not p:
+            raise PermissionError("Projeto não encontrado ou acesso negado.")
+        s.query(TransformadorSE).filter_by(projeto_id=projeto_id).delete()
+        for t in transformadores:
+            t_clean = sanitiza_kwargs({k: v for k, v in t.items() if k != "projeto_id"})
+            s.add(TransformadorSE(projeto_id=projeto_id, **t_clean))
+        return len(transformadores)
+
+
+def lista_transformadores(projeto_id: int) -> list[TransformadorSE]:
+    with get_session() as s:
+        return s.query(TransformadorSE).filter_by(projeto_id=projeto_id).all()
