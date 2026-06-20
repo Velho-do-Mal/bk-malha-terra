@@ -100,7 +100,7 @@ def atualiza_projeto(
     **campos,
 ) -> bool:
     """Atualiza campos do projeto. Retorna True se encontrado."""
-    campos = sanitiza_kwargs(campos)
+    campos = sanitiza_kwargs(**campos)
     with get_session() as s:
         p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
         if not p:
@@ -155,7 +155,7 @@ def salva_dados_entrada(
     **campos,
 ) -> None:
     """Upsert de dados_entrada. Verifica propriedade do tenant."""
-    campos = sanitiza_kwargs(campos)
+    campos = sanitiza_kwargs(**campos)
     with get_session() as s:
         p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
         if not p:
@@ -179,7 +179,7 @@ def salva_resultado(
     **campos,
 ) -> None:
     """Upsert de resultado. Verifica propriedade do tenant."""
-    campos = sanitiza_kwargs(campos)
+    campos = sanitiza_kwargs(**campos)
     with get_session() as s:
         p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
         if not p:
