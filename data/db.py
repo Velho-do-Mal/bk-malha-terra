@@ -132,13 +132,45 @@ def _migrar_startup(engine: Engine) -> None:
         ("criado_em",       "TIMESTAMP DEFAULT NOW()"),
     ]
 
+    # Colunas adicionadas ao modelo ReleProtecao após criação inicial
+    colunas_rele_protecao = [
+        ("ajuste_pickup_pu", "NUMERIC(10,4)"),
+        ("curva",            "VARCHAR(100)"),
+        ("observacoes",      "TEXT"),
+        ("criado_em",        "TIMESTAMP DEFAULT NOW()"),
+    ]
+
+    # Colunas adicionadas ao modelo TransformadorSE após criação inicial
+    colunas_transformador_se = [
+        ("tag",               "VARCHAR(50)"),
+        ("potencia_mva",      "NUMERIC(10,3)"),
+        ("tensao_at_kv",      "NUMERIC(10,3)"),
+        ("tensao_mt_kv",      "NUMERIC(10,3)"),
+        ("tensao_bt_kv",      "NUMERIC(10,3)"),
+        ("grupo_ligacao",     "VARCHAR(20)"),
+        ("zcc_pct",           "NUMERIC(6,3)"),
+        ("corrente_nom_at_a", "NUMERIC(10,2)"),
+        ("corrente_nom_mt_a", "NUMERIC(10,2)"),
+        ("fabricante",        "VARCHAR(100)"),
+        ("numero_serie",      "VARCHAR(100)"),
+        ("observacoes",       "TEXT"),
+        ("criado_em",         "TIMESTAMP DEFAULT NOW()"),
+    ]
+
+    migracoes = [
+        ("barra_sistema",    colunas_barra_sistema),
+        ("rele_protecao",    colunas_rele_protecao),
+        ("transformador_se", colunas_transformador_se),
+    ]
+
     try:
         with engine.begin() as conn:
-            for col, tipo in colunas_barra_sistema:
-                conn.execute(text(
-                    f'ALTER TABLE "{schema}".barra_sistema '
-                    f'ADD COLUMN IF NOT EXISTS {col} {tipo}'
-                ))
+            for tabela, colunas in migracoes:
+                for col, tipo in colunas:
+                    conn.execute(text(
+                        f'ALTER TABLE "{schema}".{tabela} '
+                        f'ADD COLUMN IF NOT EXISTS {col} {tipo}'
+                    ))
     except Exception:
         pass  # tabela pode não existir ainda — create_all já a criou acima
 
