@@ -30,8 +30,7 @@ class TestVerifica:
         assert not v.atende_toque
         assert not v.atende_geral
         assert v.margem_toque_pct < 0
-        # v2: mensagem usa emoji ❌ e descreve excesso em Volts
-        assert any("❌" in o for o in v.observacoes)
+        assert any("NÃO ATENDE" in o for o in v.observacoes)
 
     def test_atende_gpr_simples(self):
         """GPR ≤ Etoque admissível → caso trivial."""
@@ -42,8 +41,7 @@ class TestVerifica:
         )
         assert v.atende_gpr_simples
         assert v.atende_geral
-        # v2: mensagem cita "simplificado" em vez de "intrinsecamente"
-        assert any("simplificado" in o for o in v.observacoes)
+        assert any("intrinsecamente" in o for o in v.observacoes)
 
 
 class TestIteraHastes:
