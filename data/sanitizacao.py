@@ -2,12 +2,12 @@
 data/sanitizacao.py
 ===================
 
-Conversão de tipos NumPy para tipos Python nativos antes de salvar no banco.
+Conversão de tipos NumPy/dataclasses para tipos Python nativos
+serializáveis em JSON e compatíveis com SQLAlchemy.
 
-CORREÇÃO CRÍTICA:
-    np.float64 é subclasse de float em Python, então a verificação
-    isinstance(valor, float) retorna True para np.float64 sem converter.
-    A checagem de tipos NumPy deve vir ANTES da checagem de float nativo.
+NumPy retorna tipos como np.float64, np.int64, np.bool_ que não são
+serializáveis pelo módulo json padrão e podem causar problemas em
+algumas drivers de banco. Esta função normaliza tudo recursivamente.
 """
 
 from __future__ import annotations
@@ -18,22 +18,35 @@ from typing import Any
 try:
     import numpy as np
     HAS_NUMPY = True
-except ImportError:
+except ImportError:  # pragma: no cover
     HAS_NUMPY = False
 
 
 def to_python(valor: Any) -> Any:
     """
-    Converte recursivamente para tipos Python nativos.
+    Converte recursivamente um valor para tipos Python nativos.
 
-    IMPORTANTE: NumPy vem ANTES de float/int/bool
-    porque np.float64 é subclasse de float e passaria
-    sem conversão se float viesse primeiro.
+    Trata:
+        - np.bool_ → bool
+        - np.integer → int
+        - np.floating → float
+        - np.ndarray → list (recursivo)
+        - dataclass → dict (recursivo)
+        - dict, list, tuple, set → recursivo
+        - None, str, int, float, bool → mantém
+
+    Args:
+        valor: valor de qualquer tipo
+
+    Returns:
+        Valor com tipos Python nativos.
     """
-    if valor is None:
-        return None
+    # Tipos Python nativos básicos
+    if valor is None or isinstance(valor, (str, bool, int, float)):
+        # Cuidado: bool é subclasse de int, ordem importa
+        return valor
 
-    # ── NumPy primeiro (antes de float/int/bool nativos) ──────────────────
+    # NumPy
     if HAS_NUMPY:
         if isinstance(valor, np.bool_):
             return bool(valor)
@@ -44,38 +57,25 @@ def to_python(valor: Any) -> Any:
         if isinstance(valor, np.ndarray):
             return [to_python(v) for v in valor.tolist()]
 
-    # ── Tipos Python nativos (após NumPy) ─────────────────────────────────
-    if isinstance(valor, bool):
-        return valor
-    if isinstance(valor, int):
-        return valor
-    if isinstance(valor, float):
-        return valor
-    if isinstance(valor, str):
-        return valor
-
-    # ── Dataclasses ───────────────────────────────────────────────────────
+    # Dataclasses
     if is_dataclass(valor) and not isinstance(valor, type):
         return {k: to_python(v) for k, v in asdict(valor).items()}
 
-    # ── Coleções ──────────────────────────────────────────────────────────
+    # Coleções
     if isinstance(valor, dict):
         return {str(k): to_python(v) for k, v in valor.items()}
     if isinstance(valor, (list, tuple, set)):
         return [to_python(v) for v in valor]
 
-    # ── Fallback ──────────────────────────────────────────────────────────
+    # Fallback: tenta str
     return str(valor)
 
 
-def sanitiza_kwargs(campos: dict | None = None, **kwargs: Any) -> dict:
+def sanitiza_kwargs(**kwargs: Any) -> dict:
     """
-    Sanitiza todos os valores de um dict para tipos Python nativos.
+    Aplica `to_python` em todos os valores de um dict de kwargs.
 
-    Aceita dict direto ou **kwargs:
-        sanitiza_kwargs(meu_dict)        → dict direto
-        sanitiza_kwargs(**meu_dict)      → desempacotado
-        sanitiza_kwargs(a=1, b=np.float64(2.0))
+    Útil antes de chamar `repository.salva_resultado(**kwargs)` quando
+    os valores podem vir de cálculos com NumPy.
     """
-    source = campos if isinstance(campos, dict) else kwargs
-    return {k: to_python(v) for k, v in source.items()}
+    return {k: to_python(v) for k, v in kwargs.items()}
