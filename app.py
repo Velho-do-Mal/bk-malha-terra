@@ -593,6 +593,7 @@ def aba_curto():
 
             repo.salva_dados_entrada(
                 pid,
+                tenant_id_atual(),
                 i_falta_3i0_ka=i_falta,
                 tempo_eliminacao_s=tempo,
                 sf_div_corrente=sf,
