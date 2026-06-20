@@ -161,7 +161,7 @@ def _sub_barras(pid: int):
         {
             "Barra": "Barra AT 138 kV", "Tensão [kV]": 138.0, "Tipo": "AT",
             "Z1 R [Ω]": 2.5, "Z1 X [Ω]": 25.0, "Z0 R [Ω]": 3.8, "Z0 X [Ω]": 10.0,
-            "Icc3F [kA]": 0.0, "Icc1F [kA]": 8.0, "Icc2F [kA]": 0.0, "Ip [kA]"h: 0.0,
+            "Icc3F [kA]": 0.0, "Icc1F [kA]": 8.0, "Icc2F [kA]": 0.0, "Ip [kA]": 0.0,
             "X/R": 10.0, "Barra do projeto ✅": True,
         },
         {
