@@ -82,6 +82,68 @@ def is_postgres() -> bool:
 
 
 # ============================================================
+# Migração incremental de startup
+# ============================================================
+
+def _migrar_startup(engine: Engine) -> None:
+    """
+    Adiciona colunas novas em tabelas existentes (ADD COLUMN IF NOT EXISTS)
+    e cria tabelas novas que ainda não existam no banco.
+
+    Idempotente — seguro para rodar sempre que o engine é criado.
+    Não levanta exceção: erros são silenciados para não bloquear o startup.
+    """
+    # Cria tabelas que ainda não existem (ex: rele_protecao, transformador_se)
+    try:
+        from data.models import Base
+        Base.metadata.create_all(engine, checkfirst=True)
+    except Exception:
+        pass
+
+    # Migrações de colunas só fazem sentido em PostgreSQL
+    if not is_postgres():
+        return
+
+    schema = _get_schema()
+
+    # Colunas adicionadas ao modelo BarraSistema após criação inicial da tabela
+    colunas_barra_sistema = [
+        ("base_mva",        "NUMERIC(10,3)  DEFAULT 100.0"),
+        ("unidade_z",       "VARCHAR(10)    DEFAULT 'Ohm'"),
+        ("z1_r_ohm",        "NUMERIC(15,6)"),
+        ("z1_x_ohm",        "NUMERIC(15,6)"),
+        ("z1_mod_ohm",      "NUMERIC(15,6)"),
+        ("z1_ang_grau",     "NUMERIC(8,3)"),
+        ("z2_r_ohm",        "NUMERIC(15,6)"),
+        ("z2_x_ohm",        "NUMERIC(15,6)"),
+        ("z0_r_ohm",        "NUMERIC(15,6)"),
+        ("z0_x_ohm",        "NUMERIC(15,6)"),
+        ("z0_mod_ohm",      "NUMERIC(15,6)"),
+        ("z0_ang_grau",     "NUMERIC(8,3)"),
+        ("icc_3f_ka",       "NUMERIC(12,4)"),
+        ("icc_2f_ka",       "NUMERIC(12,4)"),
+        ("icc_1f_ka",       "NUMERIC(12,4)"),
+        ("icc_2f1f_ka",     "NUMERIC(12,4)"),
+        ("ip_pico_ka",      "NUMERIC(12,4)"),
+        ("xr_ratio",        "NUMERIC(8,3)"),
+        ("kappa",           "NUMERIC(6,4)"),
+        ("e_barra_projeto", "BOOLEAN DEFAULT FALSE"),
+        ("observacoes",     "TEXT"),
+        ("criado_em",       "TIMESTAMP DEFAULT NOW()"),
+    ]
+
+    try:
+        with engine.begin() as conn:
+            for col, tipo in colunas_barra_sistema:
+                conn.execute(text(
+                    f'ALTER TABLE "{schema}".barra_sistema '
+                    f'ADD COLUMN IF NOT EXISTS {col} {tipo}'
+                ))
+    except Exception:
+        pass  # tabela pode não existir ainda — create_all já a criou acima
+
+
+# ============================================================
 # Engine e Session
 # ============================================================
 
@@ -92,6 +154,9 @@ _SessionLocal: sessionmaker | None = None
 def get_engine() -> Engine:
     """
     Retorna o engine SQLAlchemy (singleton).
+
+    Na primeira chamada, além de criar o engine, executa _migrar_startup()
+    para garantir que colunas novas existam no banco de produção.
 
     Configurações por backend:
         SQLite:
@@ -122,6 +187,10 @@ def get_engine() -> Engine:
                     "options": f"-csearch_path={schema},public"
                 }
             )
+
+        # Aplica migrações incrementais na primeira inicialização
+        _migrar_startup(_engine)
+
     return _engine
 
 
