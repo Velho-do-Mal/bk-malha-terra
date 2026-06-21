@@ -1,11 +1,11 @@
 """
-data/repository.py — BK Malha de Terra v2 (Multi-Tenant)
+data/repository.py - BK Malha de Terra v2 (Multi-Tenant)
 =========================================================
 Todas as funcoes recebem tenant_id obrigatorio.
 Garante isolamento: nenhuma query retorna dados de outro tenant.
 
-v2.1 — remove imports de modelos nao existentes (BarraSistema, etc.)
-       garante compatibilidade com models.py atual
+v2.1 - remove imports inexistentes (BarraSistema etc.)
+       garante lista_relatorios_de
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from data.models import (
 from data.sanitizacao import sanitiza_kwargs, to_python
 
 
-# ═══ PROJETOS ═══════════════════════════════════════════════════════════════
+# --- PROJETOS ----------------------------------------------------------------
 
 def cria_projeto(
     tenant_id: int,
@@ -43,13 +43,12 @@ def cria_projeto(
     with get_session() as s:
         tenant = s.query(Tenant).filter_by(id=tenant_id).first()
         if tenant:
-            n = s.query(Projeto).filter_by(tenantid=tenant_id).count()
+            n = s.query(Projeto).filter_by(tenant_id=tenant_id).count()
             if n >= tenant.max_projetos:
                 raise RuntimeError(
                     f"Limite de {tenant.max_projetos} projetos do plano "
                     f"{tenant.plano} atingido. Faca upgrade para continuar."
                 )
-
         p = Projeto(
             tenant_id=tenant_id,
             criado_por_id=criado_por_id,
@@ -69,7 +68,7 @@ def cria_projeto(
 
 
 def lista_projetos(tenant_id: int, limit: int = 100) -> list[Projeto]:
-    """Lista projetos DO TENANT. Nunca retorna projetos de outros tenants."""
+    """Lista projetos DO TENANT."""
     with get_session() as s:
         stmt = (
             select(Projeto)
@@ -96,11 +95,7 @@ def busca_projeto(projeto_id: int, tenant_id: int) -> Optional[Projeto]:
         return s.scalars(stmt).first()
 
 
-def atualiza_projeto(
-    projeto_id: int,
-    tenant_id: int,
-    **campos,
-) -> bool:
+def atualiza_projeto(projeto_id: int, tenant_id: int, **campos) -> bool:
     """Atualiza campos do projeto. Retorna True se encontrado."""
     campos = sanitiza_kwargs(**campos)
     with get_session() as s:
@@ -123,7 +118,7 @@ def deleta_projeto(projeto_id: int, tenant_id: int) -> bool:
         return True
 
 
-# ═══ SOLO WENNER ════════════════════════════════════════════════════════════
+# --- SOLO WENNER -------------------------------------------------------------
 
 def salva_medicoes_wenner(
     projeto_id: int,
@@ -135,7 +130,6 @@ def salva_medicoes_wenner(
         p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
         if not p:
             raise PermissionError("Projeto nao encontrado ou acesso negado.")
-
         s.query(SoloWenner).filter_by(projeto_id=projeto_id).delete()
         for i, m in enumerate(medicoes, start=1):
             s.add(SoloWenner(
@@ -148,55 +142,43 @@ def salva_medicoes_wenner(
         return len(medicoes)
 
 
-# ═══ DADOS DE ENTRADA ═══════════════════════════════════════════════════════
+# --- DADOS DE ENTRADA --------------------------------------------------------
 
-def salva_dados_entrada(
-    projeto_id: int,
-    tenant_id: int,
-    **campos,
-) -> None:
+def salva_dados_entrada(projeto_id: int, tenant_id: int, **campos) -> None:
     """Upsert de dados_entrada. Verifica propriedade do tenant."""
     campos = sanitiza_kwargs(**campos)
     with get_session() as s:
         p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
         if not p:
             raise PermissionError("Projeto nao encontrado ou acesso negado.")
-
         de = s.query(DadosEntrada).filter_by(projeto_id=projeto_id).first()
         if de is None:
             de = DadosEntrada(projeto_id=projeto_id)
             s.add(de)
-
         for k, v in campos.items():
             if hasattr(de, k):
                 setattr(de, k, v)
 
 
-# ═══ RESULTADO ══════════════════════════════════════════════════════════════
+# --- RESULTADO ---------------------------------------------------------------
 
-def salva_resultado(
-    projeto_id: int,
-    tenant_id: int,
-    **campos,
-) -> None:
+def salva_resultado(projeto_id: int, tenant_id: int, **campos) -> None:
     """Upsert de resultado. Verifica propriedade do tenant."""
     campos = sanitiza_kwargs(**campos)
     with get_session() as s:
         p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
         if not p:
             raise PermissionError("Projeto nao encontrado ou acesso negado.")
-
         res = s.query(Resultado).filter_by(projeto_id=projeto_id).first()
         if res is None:
             res = Resultado(projeto_id=projeto_id)
             s.add(res)
-
         for k, v in campos.items():
             if hasattr(res, k):
                 setattr(res, k, v)
 
 
-# ═══ RELATORIO ══════════════════════════════════════════════════════════════
+# --- RELATORIO ---------------------------------------------------------------
 
 def registra_relatorio(
     projeto_id: int,
@@ -235,7 +217,7 @@ def lista_relatorios_de(projeto_id: int) -> list[dict]:
         ]
 
 
-# ═══ TENANT / ADMIN ═════════════════════════════════════════════════════════
+# --- TENANT / ADMIN ----------------------------------------------------------
 
 def info_tenant(tenant_id: int) -> Optional[dict]:
     """Retorna informacoes do tenant para exibicao."""
@@ -246,13 +228,13 @@ def info_tenant(tenant_id: int) -> Optional[dict]:
         n_projetos = s.query(Projeto).filter_by(tenant_id=tenant_id).count()
         n_usuarios = s.query(Usuario).filter_by(tenant_id=tenant_id, ativo=True).count()
         return {
-            "nome_empresa":  t.nome_empresa,
-            "plano":         t.plano,
-            "plano_label":   t.plano_label,
-            "max_projetos":  t.max_projetos,
-            "max_usuarios":  t.max_usuarios,
-            "n_projetos":    n_projetos,
-            "n_usuarios":    n_usuarios,
-            "trial_expira":  t.trial_expira_em,
-            "ativo":         t.ativo,
+            "nome_empresa": t.nome_empresa,
+            "plano": t.plano,
+            "plano_label": t.plano_label,
+            "max_projetos": t.max_projetos,
+            "max_usuarios": t.max_usuarios,
+            "n_projetos": n_projetos,
+            "n_usuarios": n_usuarios,
+            "trial_expira": t.trial_expira_em,
+            "ativo": t.ativo,
         }
