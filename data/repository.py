@@ -1,8 +1,11 @@
 """
 data/repository.py — BK Malha de Terra v2 (Multi-Tenant)
 =========================================================
-Todas as funções recebem tenant_id obrigatório.
+Todas as funcoes recebem tenant_id obrigatorio.
 Garante isolamento: nenhuma query retorna dados de outro tenant.
+
+v2.1 — remove imports de modelos nao existentes (BarraSistema, etc.)
+       garante compatibilidade com models.py atual
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ from data.models import (
 from data.sanitizacao import sanitiza_kwargs, to_python
 
 
-# ─── PROJETOS ────────────────────────────────────────────────────────────────
+# ═══ PROJETOS ═══════════════════════════════════════════════════════════════
 
 def cria_projeto(
     tenant_id: int,
@@ -38,14 +41,13 @@ def cria_projeto(
 ) -> int:
     """Cria projeto e retorna ID. Isolado por tenant_id."""
     with get_session() as s:
-        # Verifica limite do plano
         tenant = s.query(Tenant).filter_by(id=tenant_id).first()
         if tenant:
-            n = s.query(Projeto).filter_by(tenant_id=tenant_id).count()
+            n = s.query(Projeto).filter_by(tenantid=tenant_id).count()
             if n >= tenant.max_projetos:
                 raise RuntimeError(
                     f"Limite de {tenant.max_projetos} projetos do plano "
-                    f"{tenant.plano} atingido. Faça upgrade para continuar."
+                    f"{tenant.plano} atingido. Faca upgrade para continuar."
                 )
 
         p = Projeto(
@@ -121,19 +123,18 @@ def deleta_projeto(projeto_id: int, tenant_id: int) -> bool:
         return True
 
 
-# ─── SOLO WENNER ─────────────────────────────────────────────────────────────
+# ═══ SOLO WENNER ════════════════════════════════════════════════════════════
 
 def salva_medicoes_wenner(
     projeto_id: int,
     tenant_id: int,
     medicoes: list[dict],
 ) -> int:
-    """Substitui medições Wenner do projeto. Retorna quantidade salva."""
+    """Substitui medicoes Wenner do projeto. Retorna quantidade salva."""
     with get_session() as s:
-        # Verificar propriedade
         p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
         if not p:
-            raise PermissionError("Projeto não encontrado ou acesso negado.")
+            raise PermissionError("Projeto nao encontrado ou acesso negado.")
 
         s.query(SoloWenner).filter_by(projeto_id=projeto_id).delete()
         for i, m in enumerate(medicoes, start=1):
@@ -147,7 +148,7 @@ def salva_medicoes_wenner(
         return len(medicoes)
 
 
-# ─── DADOS DE ENTRADA ────────────────────────────────────────────────────────
+# ═══ DADOS DE ENTRADA ═══════════════════════════════════════════════════════
 
 def salva_dados_entrada(
     projeto_id: int,
@@ -159,7 +160,7 @@ def salva_dados_entrada(
     with get_session() as s:
         p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
         if not p:
-            raise PermissionError("Projeto não encontrado ou acesso negado.")
+            raise PermissionError("Projeto nao encontrado ou acesso negado.")
 
         de = s.query(DadosEntrada).filter_by(projeto_id=projeto_id).first()
         if de is None:
@@ -171,7 +172,7 @@ def salva_dados_entrada(
                 setattr(de, k, v)
 
 
-# ─── RESULTADO ───────────────────────────────────────────────────────────────
+# ═══ RESULTADO ══════════════════════════════════════════════════════════════
 
 def salva_resultado(
     projeto_id: int,
@@ -183,7 +184,7 @@ def salva_resultado(
     with get_session() as s:
         p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
         if not p:
-            raise PermissionError("Projeto não encontrado ou acesso negado.")
+            raise PermissionError("Projeto nao encontrado ou acesso negado.")
 
         res = s.query(Resultado).filter_by(projeto_id=projeto_id).first()
         if res is None:
@@ -195,17 +196,19 @@ def salva_resultado(
                 setattr(res, k, v)
 
 
+# ═══ RELATORIO ══════════════════════════════════════════════════════════════
+
 def registra_relatorio(
     projeto_id: int,
     tenant_id: int,
     nome_arquivo: str,
     gerado_por: Optional[str] = None,
 ) -> None:
-    """Registra geração de relatório Word."""
+    """Registra geracao de relatorio Word."""
     with get_session() as s:
         p = s.query(Projeto).filter_by(id=projeto_id, tenant_id=tenant_id).first()
         if not p:
-            raise PermissionError("Projeto não encontrado ou acesso negado.")
+            raise PermissionError("Projeto nao encontrado ou acesso negado.")
         s.add(RelatorioGerado(
             projeto_id=projeto_id,
             nome_arquivo=nome_arquivo,
@@ -213,10 +216,29 @@ def registra_relatorio(
         ))
 
 
-# ─── TENANT / ADMIN ──────────────────────────────────────────────────────────
+def lista_relatorios_de(projeto_id: int) -> list[dict]:
+    """Lista relatorios gerados para o projeto, do mais recente ao mais antigo."""
+    with get_session() as s:
+        rels = (
+            s.query(RelatorioGerado)
+            .filter_by(projeto_id=projeto_id)
+            .order_by(RelatorioGerado.gerado_em.desc())
+            .all()
+        )
+        return [
+            {
+                "gerado_em": r.gerado_em,
+                "nome_arquivo": r.nome_arquivo,
+                "gerado_por": r.gerado_por,
+            }
+            for r in rels
+        ]
+
+
+# ═══ TENANT / ADMIN ═════════════════════════════════════════════════════════
 
 def info_tenant(tenant_id: int) -> Optional[dict]:
-    """Retorna informações do tenant para exibição."""
+    """Retorna informacoes do tenant para exibicao."""
     with get_session() as s:
         t = s.query(Tenant).filter_by(id=tenant_id).first()
         if not t:
