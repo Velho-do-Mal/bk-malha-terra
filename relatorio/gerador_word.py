@@ -1049,3 +1049,22 @@ def gerar_relatorio_word(projeto, imagens: dict | None = None) -> bytes:
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Aliases de compatibilidade com app.py
+# ---------------------------------------------------------------------------
+
+def nome_arquivo_padrao(projeto) -> str:
+    """Gera nome padrao do arquivo .docx para download."""
+    import re
+    from datetime import date as _date
+    num = re.sub(r'[^A-Za-z0-9_-]', '_', str(getattr(projeto, 'numero_projeto', 'PROJ')))
+    rev = re.sub(r'[^A-Za-z0-9]', '', str(getattr(projeto, 'revisao', '00')))
+    today = _date.today().strftime('%Y%m%d')
+    return f"Relatorio_Malha_Terra_{num}_R{rev}_{today}.docx"
+
+
+def gera_relatorio_word(projeto, imagens=None, logo_path=None) -> bytes:
+    """Alias para compatibilidade com app.py (aceita logo_path ignorado)."""
+    return gerar_relatorio_word(projeto, imagens)
