@@ -335,8 +335,9 @@ def _calcular_condutor_por_nivel(i_g_ka: float, t_s: float) -> dict:
     """
     i_ka     = i_g_ka
     i_a      = i_ka * 1000.0    # A
-    Kf       = 7.06e-3           # A·s^0.5 / mm²  (cobre, Tm=250°C, Ta=40°C)
-    A_mm2    = i_a * math.sqrt(t_s) / Kf
+    K        = 7.06              # IEEE 80-2013 Tab.1: cobre recozido, Tm=250C, Ta=40C
+    A_kcmil  = i_a * math.sqrt(t_s) / K
+    A_mm2    = A_kcmil * 0.5067  # kcmil -> mm2
 
     # Bitolas normalizadas (NBR 6786 / IEEE)
     bitolas = [10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300]
@@ -646,46 +647,34 @@ def _secao_solo(doc, proj, de, wenner_rows):
 def _secao_condutor(doc, de, imp: dict, cond: dict):
     _heading(doc, "6. DIMENSIONAMENTO DO CONDUTOR DE ATERRAMENTO", 1)
     _body(doc,
-        "O dimensionamento do condutor é realizado pelo critério térmico da "
-        "IEEE Std 80-2013 (Eq. 3.4 deste memorial). A tabela a seguir apresenta "
-        "os resultados por nível de tensão e para o cabo da malha enterrada."
+        "O dimensionamento do condutor da malha de aterramento segue o criterio "
+        "termico da IEEE Std 80-2013, Eq. (37). A secao minima e calculada para "
+        "a corrente de falta fase-terra maxima dissipada pela malha."
     )
+    nivel    = cond.get('at', {}) if cond else {}
+    i_a      = nivel.get('i_a', 0.0)
+    t_s_val  = nivel.get('t_s', 0.0)
+    A_calc   = nivel.get('A_calc_mm2', 0.0)
+    material = nivel.get('material', 'Cobre nu (soft-drawn)')
+    bitola_us = float(getattr(de, 'condutor_bitola_mm2', 0) or 0) if de else 0
+    bitola   = bitola_us if bitola_us > 0 else nivel.get('bitola_mm2', 0)
+    atende   = bitola >= A_calc
+
     rows = [
-        ["Barramento 138 kV (AT)",
-         f"{cond['at']['i_a']:.0f} A",
-         f"{cond['at']['t_s']:.3f} s",
-         f"{cond['at']['A_calc_mm2']:.1f} mm²",
-         f"{cond['at']['bitola_mm2']} mm²",
-         cond['at']['material']],
-        ["Barramento 13,8 kV (MT)",
-         f"{cond['mt']['i_a']:.0f} A",
-         f"{cond['mt']['t_s']:.3f} s",
-         f"{cond['mt']['A_calc_mm2']:.1f} mm²",
-         f"{cond['mt']['bitola_mm2']} mm²",
-         cond['mt']['material']],
-        ["Malha enterrada",
-         f"{cond['malha']['i_a']:.0f} A",
-         f"{cond['malha']['t_s']:.3f} s",
-         f"{cond['malha']['A_calc_mm2']:.1f} mm²",
-         f"{cond['malha']['bitola_mm2']} mm²",
-         cond['malha']['material']],
+        ["Corrente de falta (I_g)",   f"{i_a:.0f} A"],
+        ["Tempo de eliminacao (tc)",  f"{t_s_val:.3f} s"],
+        ["Secao minima calc. (A)",    f"{A_calc:.1f} mm²"],
+        ["Bitola adotada",            f"{bitola:.0f} mm²"],
+        ["Material",                  material],
+        ["Atende IEEE Std 80-2013",   'SIM' if atende else 'NAO - revisar bitola'],
     ]
-    _make_table(doc,
-        ["Local / Nível", "I_g (A)", "t_c (s)", "A_calc", "Bitola adotada", "Material"],
-        rows, col_widths_cm=[4.0, 2.5, 2.0, 2.5, 3.0, 3.5])
-    _nota(doc,
-        "Bitolas adotadas com folga de segurança conforme NBR 13936 e CPFL-NTC-920305. "
-        "Temperatura máxima admissível: T_m = 250°C (fusão do cobre: 1.083°C)."
-    )
-
-    # Memória de cálculo
-    _heading(doc, "6.1  Memória de Cálculo — Barramento AT", 2)
-    _body(doc, f"Dados: I_g = {cond['at']['i_a']:.0f} A; t_c = {cond['at']['t_s']:.3f} s; K_f = 7,06×10⁻³ A·√s/mm²")
-    _omml_par(doc, _eq(
-        f"A_mm² = {cond['at']['i_a']:.0f} × √{cond['at']['t_s']:.3f} / (7,06×10⁻³) "
-        f"= {cond['at']['A_calc_mm2']:.1f} mm²  →  adotado: {cond['at']['bitola_mm2']} mm²"
-    ))
-
+    _make_table(doc, ["Parametro", "Valor"], rows, col_widths_cm=[9.0, 7.5])
+    if not atende:
+        _body(doc,
+            f"ATENCAO: Bitola adotada ({bitola:.0f} mm²) inferior "
+            f"a secao minima calculada ({A_calc:.1f} mm²). Revisar bitola.",
+            bold=True
+        )
 
 def _secao_geometria(doc, de):
     _heading(doc, "7. GEOMETRIA DA MALHA", 1)
@@ -697,7 +686,7 @@ def _secao_geometria(doc, de):
         "Profundidade (h)":             f"{getattr(de,'profundidade_m',None) or 0.5} m",
         "Espessura da brita (h_s)":     f"{getattr(de,'espessura_brita_m',None) or 0.1} m",
         "Número de hastes":             f"{getattr(de,'n_hastes',None) or '[INSERIR]'}",
-        "Comprimento das hastes":       f"{getattr(de,'comprimento_haste_m',None) or 2.4} m",
+        "Comprimento das hastes":       f"{getattr(de,'haste_comprimento_m', getattr(de, 'comprimento_haste_m', 3.0))} m",
     }
     rows = [[k, v] for k, v in campos.items()]
     _make_table(doc, ["Parâmetro", "Valor"], rows, col_widths_cm=[7.5, 9.0])
@@ -1019,9 +1008,6 @@ def gerar_relatorio_word(projeto, imagens: dict | None = None) -> bytes:
     doc.add_paragraph()
     _secao_metodologia(doc)
     doc.add_paragraph()
-    if de and imp:
-        _secao_sistema_eletrico(doc, de, imp)
-        doc.add_paragraph()
     _secao_solo(doc, projeto, de, wenner_rows)
     doc.add_paragraph()
     if de and imp and cond:
