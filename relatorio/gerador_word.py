@@ -479,7 +479,7 @@ def _secao_metodologia(doc):
         "Wenner de quatro eletrodos. Equacionamento (IEEE 80-2013, Apêndice B):"
     )
     _label_eq(doc, "(Eq. 3.1)",
-        _eq_frac("2π a R_a", "1 + 2a/√(a®+4b²) − a/√(a²+b²)", pre="ρ ="))
+        _eq_frac("2π a R_a", "1 + 2a/√(a²+4b²) − a/√(a²+b²)", pre="ρ ="))
     _body(doc,
         "onde: a = espaçamento entre eletrodos [m]; "
         "b = profundidade dos eletrodos [m] (normalmente b << a, logo ρ ≈ 2πaR_a); "
@@ -737,63 +737,6 @@ def _secao_tensoes(doc, de, res):
         rows, col_widths_cm=[7.5, 4.5, 4.5])
 
 
-def _secao_coordenacao(doc, de, reles: list[dict]):
-    _heading(doc, "10. COORDENAÇÃO E SELETIVIDADE DOS RELÉS", 1)
-    _body(doc,
-        "A coordenação e seletividade dos relés de proteção é essencial para "
-        "garantir que a falta seja eliminada dentro do tempo de eliminação "
-        "adotado no estudo de aterramento. A tabela a seguir apresenta os "
-        "ajustes dos relés conforme CPFL-NTC-920301/302/303 e IEEE C37.112."
-    )
-
-    # Tabela de ajustes
-    _heading(doc, "10.1  Tabela de Ajustes dos Relés de Proteção", 2)
-    rows = []
-    for r in reles:
-        rows.append([
-            r["funcao"],
-            r["descricao"],
-            r["pickup_a"],
-            r["retardo"],
-            r["ip50"],
-            r["norma"],
-        ])
-    _make_table(doc,
-        ["Função", "Descrição", "Pickup / Corrente de ajuste",
-         "Retardo / Característica", "Instantâneo (50)", "Norma"],
-        rows, col_widths_cm=[1.5, 4.0, 3.5, 4.0, 2.5, 2.5])
-
-    # Critério de seletividade
-    _heading(doc, "10.2  Critério de Seletividade e Tempo de Eliminação", 2)
-    t_elim = float(de.tempo_eliminacao_s or 0.1)
-    _body(doc,
-        f"O tempo de eliminação da falta adotado no estudo é t_f = {t_elim:.3f} s, "
-        "definido pelo relé de proteção principal (função 50N/51N ou 87T). "
-        "Este valor C� o tempo máximo de choque (t_s) utilizado no cálculo das "
-        "tensões admissíveis de passo e toque (Eqs. 3.3a e 3.3b)."
-    )
-    _body(doc,
-        "A hierarquia de seletividade adotada é: "
-        "(1) 87T — proteção principal do transformador (instantâneo); "
-        "(2) 50N — sobrecorrente instantâneo de terra (backup primário); "
-        "(3) 51N — sobrecorrente temporizado de terra (backup secundário). "
-        "O tempo de eliminação mais longo (51N) é o valor conservativo adotado."
-    )
-
-    # Nota de coordenação
-    _heading(doc, "10.3  Verificação do Critério de Tempo × Corrente", 2)
-    _body(doc,
-        "Para aprovação pela concessionária CPFL é necessário apresentar o "
-        "diagrama de coordenação em papel log-log com as curvas dos relés. "
-        "O diagrama deve ser gerado em software de coordenação (ETAP, CYMTCC "
-        "ou similar) e inserido como Anexo ao presente memorial."
-    )
-    _nota(doc,
-        "Inserir diagrama de coordenação como Anexo. "
-        "Validar ajustes com a concessionária CPFL antes da energização."
-    )
-
-
 def _secao_verificacao(doc, de, res):
     _heading(doc, "11. VERIFICAÇÃO DOS CRITÉRIOS DE SEGURANÇA", 1)
     if not res:
@@ -1020,9 +963,6 @@ def gerar_relatorio_word(projeto, imagens: dict | None = None) -> bytes:
     doc.add_paragraph()
     if res:
         _secao_tensoes(doc, de, res)
-        doc.add_paragraph()
-    if reles:
-        _secao_coordenacao(doc, de, reles)
         doc.add_paragraph()
     if res:
         _secao_verificacao(doc, de, res)
